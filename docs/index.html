@@ -17,21 +17,21 @@
   <div class="topbar-row">
     <h1 class="brand">News&nbsp;Desk</h1>
     <div class="topbar-actions">
-      <button id="btn-search" class="icon-btn" aria-label="검색">🔍</button>
-      <button id="btn-archive" class="icon-btn" aria-label="지난 날짜">🗓</button>
-      <button id="btn-refresh" class="icon-btn" aria-label="새로고침">↻</button>
+      <button id="btn-archive" class="icon-btn" data-tip="지난 날짜의 수집분 보기">🗓</button>
+      <button id="btn-refresh" class="icon-btn"
+              data-tip="서버에 올라온 최신 수집분을 다시 불러옵니다. 수집 자체는 매일 07:00·19:00에 자동으로 돕니다">↻</button>
     </div>
   </div>
   <div id="meta-line" class="meta-line">불러오는 중…</div>
 
-  <div id="search-bar" class="search-bar" hidden>
-    <input id="search-input" type="search" placeholder="키워드로 걸러보기 (예: 젠테, MBK, 프랜차이즈)" autocomplete="off">
-    <button id="search-clear" class="text-btn">지우기</button>
-  </div>
-
   <div id="archive-bar" class="search-bar" hidden>
     <select id="archive-select"></select>
     <button id="archive-latest" class="text-btn">최신으로</button>
+  </div>
+
+  <div id="search-bar" class="search-bar">
+    <input id="search-input" type="search" placeholder="🔍 키워드로 걸러보기 (예: 젠테, MBK, 프랜차이즈)" autocomplete="off">
+    <button id="search-clear" class="text-btn" hidden>지우기</button>
   </div>
 
   <div class="tabs-wrap"><nav id="tabs" class="tabs"></nav></div>

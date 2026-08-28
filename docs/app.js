@@ -2,6 +2,8 @@
 
 const HOME_PREVIEW = 5;          // 홈 대시보드에서 카테고리당 보여줄 개수
 const BM_KEY = 'newsdesk.bookmarks';
+const READ_KEY = 'newsdesk.read';
+const READ_MAX = 800;
 
 const state = {
   data: null,          // 현재 보고 있는 스냅샷
@@ -37,6 +39,27 @@ function toggleBookmark(article, catId) {
   });
   writeBookmarks(list);
   return i < 0;
+}
+
+/* ---------------------------------------------------------- 읽은 기사 */
+
+let readSet = null;
+
+function getRead() {
+  if (readSet) return readSet;
+  try { readSet = new Set(JSON.parse(localStorage.getItem(READ_KEY) || '[]')); }
+  catch { readSet = new Set(); }
+  return readSet;
+}
+
+function markRead(url) {
+  const set = getRead();
+  if (set.has(url)) return;
+  set.add(url);
+  // 무한정 쌓이지 않게 오래된 것부터 버린다
+  let arr = [...set];
+  if (arr.length > READ_MAX) { arr = arr.slice(-READ_MAX); readSet = new Set(arr); }
+  try { localStorage.setItem(READ_KEY, JSON.stringify(arr)); } catch { /* 저장 불가 환경 */ }
 }
 
 /* ---------------------------------------------------------- 유틸 */
@@ -97,7 +120,7 @@ function cardHtml(a, catId, opts = {}) {
   const chip = opts.showCat ? `<span class="cat-chip">${escapeHtml(catName(catId))}</span>` : '';
 
   return `
-    <article class="card">
+    <article class="card${getRead().has(a.url) ? ' read' : ''}">
       <a class="card-title" href="${escapeHtml(a.url)}" target="_blank" rel="noopener">${highlight(a.title, q)}</a>
       ${summary}
       <div class="card-meta">
@@ -193,6 +216,7 @@ function renderHome() {
   if (state.query && totalShown === 0) {
     html = `<p class="empty">‘${escapeHtml(state.query)}’와 맞는 기사가 없어요.<br>다른 키워드로 찾아보세요.</p>`;
   }
+  html += '<p class="swipe-hint">← 좌우로 밀어서 탭을 넘길 수 있어요 →</p>';
   if (state.data.slim) {
     html += `<p class="banner">지난 스냅샷은 가볍게 보관해서 카테고리당 상위 30건까지만 있고,
              관련기사 묶음 링크는 빠져 있어요.</p>`;
@@ -286,6 +310,13 @@ async function loadArchiveIndex() {
 /* ---------------------------------------------------------- 이벤트 */
 
 document.addEventListener('click', (e) => {
+  // 기사를 열면 읽은 것으로 표시한다 (같은 탭/새 탭 어느 쪽이든)
+  const link = e.target.closest('.card-title, .rel-list a');
+  if (link) {
+    markRead(link.getAttribute('href'));
+    link.closest('.card')?.classList.add('read');
+  }
+
   const tabBtn = e.target.closest('[data-tab]');
   if (tabBtn) {
     state.tab = tabBtn.dataset.tab;
@@ -316,23 +347,16 @@ document.addEventListener('click', (e) => {
   }
 });
 
-$('#btn-search').addEventListener('click', () => {
-  const bar = $('#search-bar');
-  bar.hidden = !bar.hidden;
-  $('#btn-search').classList.toggle('on', !bar.hidden);
-  $('#archive-bar').hidden = true;
-  $('#btn-archive').classList.remove('on');
-  if (!bar.hidden) $('#search-input').focus();
-});
-
 let searchTimer;
 $('#search-input').addEventListener('input', (e) => {
   clearTimeout(searchTimer);
+  $('#search-clear').hidden = !e.target.value;
   searchTimer = setTimeout(() => { state.query = e.target.value.trim(); render(); }, 180);
 });
 
 $('#search-clear').addEventListener('click', () => {
   $('#search-input').value = '';
+  $('#search-clear').hidden = true;
   state.query = '';
   render();
 });
@@ -341,8 +365,6 @@ $('#btn-archive').addEventListener('click', () => {
   const bar = $('#archive-bar');
   bar.hidden = !bar.hidden;
   $('#btn-archive').classList.toggle('on', !bar.hidden);
-  $('#search-bar').hidden = true;
-  $('#btn-search').classList.remove('on');
 });
 
 $('#archive-select').addEventListener('change', (e) => {
@@ -360,6 +382,53 @@ $('#btn-refresh').addEventListener('click', async (e) => {
   await loadArchiveIndex();
   await loadSnapshot('data/latest.json');
   e.currentTarget.classList.remove('spin');
+});
+
+/* ---------------------------------------------------------- 스와이프로 탭 전환 */
+
+function tabOrder() {
+  return ['home', ...(state.data?.categories || []).map((c) => c.id), 'saved'];
+}
+
+function moveTab(step) {
+  const order = tabOrder();
+  const i = order.indexOf(state.tab);
+  const next = order[i + step];
+  if (!next) return;
+  state.tab = next;
+  render();
+  // 이동한 탭이 화면 밖이면 탭바를 따라 스크롤시킨다
+  document.querySelector(`.tab[data-tab="${next}"]`)
+    ?.scrollIntoView({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+}
+
+(function enableSwipe() {
+  let x0 = null, y0 = null, t0 = 0;
+  const main = document.getElementById('view');
+
+  main.addEventListener('touchstart', (e) => {
+    if (e.touches.length !== 1) { x0 = null; return; }
+    x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; t0 = Date.now();
+  }, { passive: true });
+
+  main.addEventListener('touchend', (e) => {
+    if (x0 === null) return;
+    const dx = e.changedTouches[0].clientX - x0;
+    const dy = e.changedTouches[0].clientY - y0;
+    x0 = null;
+    // 세로 스크롤·시세 스트립 가로 스크롤과 부딪히지 않게 조건을 좁게 잡는다
+    if (Date.now() - t0 > 600) return;
+    if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 2) return;
+    if (e.target.closest('.market, .tabs, .rel-list')) return;
+    moveTab(dx < 0 ? 1 : -1);
+  }, { passive: true });
+})();
+
+// 데스크톱에서는 좌우 화살표 키로도 넘긴다
+document.addEventListener('keydown', (e) => {
+  if (e.target.matches('input, select, textarea')) return;
+  if (e.key === 'ArrowRight') moveTab(1);
+  if (e.key === 'ArrowLeft') moveTab(-1);
 });
 
 /* ---------------------------------------------------------- 시작 */

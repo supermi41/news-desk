@@ -95,6 +95,7 @@ body {
   align-items: center;
   margin-top: 9px;
 }
+#search-bar input { font-size: 14px; padding: 8px 12px; }
 .search-bar input, .search-bar select {
   flex: 1;
   min-width: 0;
@@ -372,3 +373,56 @@ main { padding: 4px 14px 32px; max-width: 780px; margin: 0 auto; }
   .mcard.up   .mchg { color: #ff6b78; }
   .mcard.down .mchg { color: #6ea8fe; }
 }
+
+/* ---------- 읽은 기사 ---------- */
+/* 이미 열어본 기사는 눈에 덜 띄게 한다. 완전히 감추지는 않는다. */
+.card.read .card-title { color: var(--text-faint); font-weight: 550; }
+.card.read .card-summary { opacity: .6; }
+.card.read .card-title::after {
+  content: ' 읽음';
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-faint);
+  background: var(--bg-sunken);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-left: 5px;
+  white-space: nowrap;
+  vertical-align: 1.5px;
+}
+
+/* ---------- 버튼 설명 툴팁 (마우스 호버) ---------- */
+.icon-btn { position: relative; }
+.icon-btn[data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 7px);
+  right: 0;
+  z-index: 40;
+  width: max-content;
+  max-width: 240px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, .18);
+  pointer-events: none;
+}
+/* 터치 기기에는 호버가 없으니 툴팁을 띄우지 않는다 */
+@media (hover: none) {
+  .icon-btn[data-tip]:hover::after { display: none; }
+}
+
+/* ---------- 스와이프 힌트 ---------- */
+.swipe-hint {
+  text-align: center;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  padding: 14px 0 2px;
+}
+@media (hover: hover) { .swipe-hint { display: none; } }
