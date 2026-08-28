@@ -1,0 +1,44 @@
+name: 뉴스 수집
+
+on:
+  schedule:
+    - cron: '0 22 * * *'   # 22:00 UTC = 07:00 KST (아침)
+    - cron: '0 10 * * *'   # 10:00 UTC = 19:00 KST (저녁)
+  workflow_dispatch:        # Actions 탭에서 수동 실행 가능
+
+permissions:
+  contents: write
+
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 뉴스 수집
+        env:
+          # Settings → Secrets and variables → Actions 에 등록하면 네이버도 함께 수집한다.
+          # 없으면 구글뉴스만으로 동작한다.
+          NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
+          NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
+        run: python collect.py
+
+      - name: 결과 커밋
+        run: |
+          git config user.name  "news-desk-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/data
+          if git diff --staged --quiet; then
+            echo "변경 없음 - 커밋 생략"
+          else
+            git commit -m "news: $(TZ=Asia/Seoul date +'%Y-%m-%d %H:%M KST')"
+            git push
+          fi

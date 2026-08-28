@@ -1,0 +1,136 @@
+{
+  "site": {
+    "title": "DJ News Desk",
+    "timezone": "Asia/Seoul",
+    "max_per_category": 50,
+    "archive_keep_days": 60
+  },
+  "dedupe": {
+    "similarity_threshold": 0.32,
+    "shingle_size": 2
+  },
+  "categories": [
+    {
+      "id": "mna",
+      "name": "M&A",
+      "emoji": "🤝",
+      "desc": "경영권 · 투자 · 크로스보더 · 구조조정",
+      "sources": {
+        "google_topic": [],
+        "google_search": [
+          "경영권 매각",
+          "인수합병 M&A",
+          "본입찰 우선협상대상자",
+          "사모펀드 인수",
+          "지분 매각 계약 체결",
+          "스타트업 투자 유치 시리즈",
+          "스타트업 인수 엑시트",
+          "해외 기업 인수 크로스보더",
+          "워크아웃 기업회생 채권단"
+        ],
+        "naver_search": [
+          "경영권매각",
+          "인수합병",
+          "사모펀드 인수",
+          "투자유치 시리즈",
+          "기업회생 인수"
+        ]
+      }
+    },
+    {
+      "id": "kfood",
+      "name": "K-Food",
+      "emoji": "🍜",
+      "desc": "F&B 프랜차이즈 · 외식 트렌드",
+      "sources": {
+        "google_topic": [],
+        "google_search": [
+          "외식 프랜차이즈 가맹점",
+          "외식업계 트렌드",
+          "F&B 브랜드 론칭",
+          "외식 브랜드 매각 상장",
+          "K푸드 해외진출 매장",
+          "식음료 팝업스토어"
+        ],
+        "naver_search": [
+          "외식 프랜차이즈",
+          "F&B 브랜드",
+          "외식 트렌드",
+          "K푸드 수출"
+        ]
+      }
+    },
+    {
+      "id": "politics",
+      "name": "정치",
+      "emoji": "🏛️",
+      "desc": "한국 정치 · 국회 · 정책",
+      "sources": {
+        "google_topic": [
+          "NATION"
+        ],
+        "google_search": [
+          "국회 본회의",
+          "대통령실",
+          "여야 협상"
+        ],
+        "naver_search": [
+          "국회 정치",
+          "대통령실"
+        ]
+      }
+    },
+    {
+      "id": "economy",
+      "name": "경제",
+      "emoji": "📈",
+      "desc": "한국 경제 · 증시 · 금리 · 부동산",
+      "sources": {
+        "google_topic": [
+          "BUSINESS"
+        ],
+        "google_search": [
+          "한국은행 기준금리",
+          "코스피 증시",
+          "부동산 정책",
+          "환율 원달러"
+        ],
+        "naver_search": [
+          "기준금리 한국은행",
+          "코스피 마감"
+        ]
+      }
+    },
+    {
+      "id": "world",
+      "name": "세계",
+      "emoji": "🌍",
+      "desc": "국제 정세 · 글로벌 경제",
+      "sources": {
+        "google_topic": [
+          "WORLD"
+        ],
+        "google_search": [
+          "미국 연준 FOMC",
+          "중국 경제",
+          "유럽 정세"
+        ],
+        "naver_search": [
+          "국제 정세"
+        ]
+      }
+    }
+  ],
+  "publisher_rss": {
+    "enabled": false,
+    "_comment": "나중에 언론사 RSS를 직접 붙이고 싶을 때 enabled=true로 바꾸고 feeds에 추가. category는 위 id 중 하나.",
+    "feeds": [
+      {
+        "category": "economy",
+        "name": "예시: 한국경제",
+        "url": "https://example.com/rss.xml",
+        "enabled": false
+      }
+    ]
+  }
+}
