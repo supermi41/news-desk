@@ -87,6 +87,8 @@ def clean_text(s):
         return ""
     s = re.sub(r"<[^>]+>", "", s)
     s = html.unescape(s)
+    # 워드프레스 RSS가 요약 끝에 붙이는 "The post ... appeared first on ..." 제거
+    s = re.sub(r"The post .*? appeared first on.*$", "", s, flags=re.S)
     s = s.replace("​", "").replace("\xa0", " ")
     return re.sub(r"\s+", " ", s).strip()
 
@@ -359,6 +361,269 @@ def publisher_feed(feed):
     return items
 
 
+# --------------------------------------------------------- 최근 딜 (뉴스 기반)
+# thevc.kr은 403으로 막혀 있고, 기사 본문에서 정규식으로 표를 채우면 오추출이 많다.
+# 그래서 표가 아니라 "딜 기사 목록"으로 두고, 제목·요약에서 확실히 읽히는
+# 금액·라운드만 배지로 붙인다. 못 읽으면 비워둔다 — 절대 추정하지 않는다.
+
+DEAL_FEEDS = [
+    ("플래텀", "https://platum.kr/feed"),
+    ("벤처스퀘어", "https://www.venturesquare.net/feed"),
+    ("스타트업레시피", "https://startuprecipe.co.kr/feed"),
+]
+DEAL_QUERIES = [
+    "스타트업 시리즈 투자 유치 억원",
+    "시드 프리A 투자 유치 스타트업",
+    "경영권 매각 우선협상대상자 선정",
+    "사모펀드 인수 지분 인수",
+]
+
+# 딜 기사인지 판단 (제목 기준)
+DEAL_HINT = re.compile(r"(투자\s*유치|유치|투자를?\s*받|시리즈\s*[A-Ea-e]|시드|프리\s*IPO|라운드|"
+                       r"인수|합병|매각|지분\s*취득|우선협상|본입찰)")
+# 배지로 쓸 금액: "1,000억 원", "150억원", "2조" 등
+DEAL_AMOUNT = re.compile(r"(\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)\s*(조|억)\s*원?")
+DEAL_ROUND = re.compile(r"(시리즈\s*[A-Ea-e][\-\+]?\d?|프리\s*[A-Ea-e]|Pre-?[A-Ea-e]|시드|브릿지|프리\s*IPO|Pre-?IPO)",
+                        re.IGNORECASE)
+
+
+# Target(피투자·피인수 회사)은 한국 기사 제목의 "회사명, ~" 형식에서만 뽑는다.
+# 서술구가 딸려오면 틀린 값이 들어가므로 공백 1개까지만 허용하고 나머지는 비워둔다.
+DEAL_TARGET = re.compile(r"^\s*(?:\[[^\]]{1,12}\]\s*)?([가-힣A-Za-z0-9][가-힣A-Za-z0-9·\.\-]{1,13}(?:\s[가-힣A-Za-z0-9·\.\-]{1,10})?)\s*[,·]")
+# 회사가 아닌 것들 (협회·부처·일반명사)은 Target으로 쓰지 않는다
+NOT_A_TARGET = {"VC협회", "협회", "중기부", "중소벤처기업부", "금융위", "금감원", "산업부",
+                "정부", "국회", "서울시", "경기도", "한국거래소", "코스닥", "코스피",
+                "스타트업", "벤처", "업계", "시장", "특징주", "단독", "속보", "종합"}
+# 서술어가 섞였으면 회사명이 아니다
+NOT_A_NAME = re.compile(r"(했|한다|하는|되는|된다|으로|에서|에게|보다|까지|부터|이번|올해|내년|지난)")
+# 투자자로 볼 수 있는 이름 형태
+DEAL_INVESTOR = re.compile(r"[가-힣A-Za-z0-9·\.]{2,22}(?:인베스트먼트|인베스트|벤처스|벤처투자|캐피탈|캐피털|"
+                           r"파트너스|자산운용|액셀러레이터|어드바이저스?|프라이빗에쿼티|PE|은행|증권)")
+DEAL_EV = re.compile(r"기업\s*가치\D{0,8}(\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)\s*(조|억)")
+DEAL_STAKE = re.compile(r"지분(?:율)?\s*(?:약\s*)?(\d{1,3}(?:\.\d+)?)\s*%")
+
+
+def _amount_str(m):
+    return f"{m.group(1)}{m.group(2)}원"
+
+
+def deal_row(article):
+    """
+    기사 하나에서 표 한 행을 만든다.
+    확실히 읽히는 것만 채우고 나머지는 None으로 둔다 (화면에서 '정보 없음'으로 표시).
+    추정하거나 계산해서 채우지 않는다.
+    """
+    title = article["title"]
+    summary = article.get("summary", "")
+    both = title + " " + summary
+
+    target = None
+    m = DEAL_TARGET.match(title)
+    if m:
+        cand = m.group(1).strip()
+        if (not NOT_A_NAME.search(cand)
+                and not DEAL_INVESTOR.fullmatch(cand)
+                and cand not in NOT_A_TARGET):
+            target = cand
+
+    # 금액은 제목에서만. 요약까지 보면 무관한 숫자가 딸려온다.
+    amount = None
+    am = re.search(r"(\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)\s*(조|억)\s*원?\s*"
+                   r"(?:규모|투자|유치|조달|인수|매각)", title)
+    if not am:
+        am = re.search(r"(?:투자|유치|조달|인수|매각|규모)\D{0,4}"
+                       r"(\d{1,3}(?:,\d{3})*(?:\.\d+)?|\d+(?:\.\d+)?)\s*(조|억)\s*원?", title)
+    if am:
+        amount = _amount_str(am)
+
+    rnd = DEAL_ROUND.search(title)
+    ev = DEAL_EV.search(both)
+    stake = DEAL_STAKE.search(both)
+    investors = [i for i in dict.fromkeys(DEAL_INVESTOR.findall(both))][:3]
+
+    return {
+        "date": article["published"][:10],
+        "investors": investors,
+        "target": target,
+        "sector": None,
+        "round": rnd.group(0).strip() if rnd else None,
+        "ev": f"{ev.group(1)}{ev.group(2)}원" if ev else None,
+        "amount": amount,
+        "stake": f"{stake.group(1)}%" if stake else None,
+        "title": title,
+        "url": article["url"],
+        "source": article["source"],
+        "from_dart": False,
+    }
+
+
+def collect_deals(threshold, shingle_size):
+    raw = []
+    for name, url in DEAL_FEEDS:
+        raw += safe(lambda u=url, n=name: parse_rss(fetch(u, cache=True), n))
+    for q in DEAL_QUERIES:
+        raw += safe(google_search, q)
+
+    seen, items = set(), []
+    for a in raw:
+        if is_blocked(a["url"], a["source"]) or not DEAL_HINT.search(a["title"]):
+            continue
+        key = a["url"].split("?")[0]
+        if key in seen:
+            continue
+        seen.add(key)
+        items.append(a)
+
+    items.sort(key=lambda a: a["published"], reverse=True)
+    clustered = cluster_articles(items, threshold, shingle_size)
+
+    rows = [deal_row(a) for a in clustered]
+
+    # 같은 회사 딜이 여러 기사로 흩어지면 한 행으로 합친다.
+    # 기사마다 읽히는 칸이 달라서, 합치면 표가 더 촘촘해진다.
+    by_target = {}
+    merged = []
+    for r in rows:
+        key = r["target"]
+        if not key:
+            merged.append(r)
+            continue
+        if key not in by_target:
+            by_target[key] = r
+            merged.append(r)
+            continue
+        base = by_target[key]
+        for field in ("round", "amount", "ev", "stake"):
+            if not base[field] and r[field]:
+                base[field] = r[field]
+        if not base["investors"] and r["investors"]:
+            base["investors"] = r["investors"]
+
+    filled = lambda r: sum(1 for k in ("target", "round", "amount", "ev", "stake") if r[k]) + bool(r["investors"])
+    merged.sort(key=lambda r: (filled(r), r["date"]), reverse=True)
+    return merged[:25]
+
+
+# --------------------------------------------------------- 딜 (DART 공시)
+# 상장사 M&A는 공시 의무가 있어 금액·지분율이 정확하다. 기사에서 긁는 것과 비교가 안 된다.
+# DART_API_KEY가 없으면 이 단계는 통째로 건너뛴다.
+
+DART_BASE = "https://opendart.fss.or.kr/api"
+DART_DAYS = 30          # 최근 며칠치 공시를 볼지
+DART_MAX_CORPS = 60     # 상세 조회 호출 상한 (하루 한도는 20,000건이라 여유가 크다)
+
+# 공시 종류 → 상세 API. 금액이 나오는 것만 쓴다.
+DART_REPORTS = [
+    ("타법인주식및출자증권양수결정", "otcprStkInvscrInhDecsn", "지분 취득"),
+    ("타법인주식및출자증권양도결정", "otcprStkInvscrTrfDecsn", "지분 매각"),
+    ("영업양수결정", "bsnInhDecsn", "영업 양수"),
+    ("영업양도결정", "bsnTrfDecsn", "영업 양도"),
+]
+
+
+def dart_get(path, **params):
+    q = urllib.parse.urlencode(params)
+    return json.loads(fetch(f"{DART_BASE}/{path}.json?{q}", timeout=25))
+
+
+def krw(raw):
+    """1234567890 → '12억원'. 공시 금액은 원 단위라 그대로 두면 못 읽는다."""
+    try:
+        n = int(str(raw).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return None
+    if n <= 0:
+        return None
+    if n >= 10 ** 12:
+        return f"{n / 10 ** 12:,.2f}조원".replace(".00조", "조")
+    if n >= 10 ** 8:
+        return f"{n / 10 ** 8:,.0f}억원"
+    return f"{n:,}원"
+
+
+def pct(raw):
+    try:
+        v = float(str(raw).replace(",", "").strip())
+    except (TypeError, ValueError):
+        return None
+    return f"{v:g}%" if v > 0 else None
+
+
+def dart_deals(key):
+    """최근 공시에서 딜 표 행을 만든다. 값은 전부 공시 원문 그대로다."""
+    end = datetime.now(KST)
+    bgn = end - timedelta(days=DART_DAYS)
+    wanted = {name: (ep, kind) for name, ep, kind in DART_REPORTS}
+
+    # 1) 공시 목록에서 대상 회사(corp_code)를 추린다
+    targets = {}
+    for page in range(1, 12):
+        d = dart_get("list", crtfc_key=key, bgn_de=f"{bgn:%Y%m%d}", end_de=f"{end:%Y%m%d}",
+                     pblntf_ty="B", page_count=100, page_no=page)
+        if d.get("status") != "000":
+            break
+        for it in d.get("list", []):
+            for name in wanted:
+                if name in it["report_nm"]:
+                    targets.setdefault(it["corp_code"], (wanted[name][0], wanted[name][1]))
+                    break
+        if page >= int(d.get("total_page", 1)):
+            break
+        time.sleep(0.15)
+
+    log(f"  DART 대상 회사 {len(targets)}곳")
+
+    # 2) 회사별 상세 공시를 읽는다
+    rows = []
+    for corp_code, (endpoint, kind) in list(targets.items())[:DART_MAX_CORPS]:
+        try:
+            d = dart_get(endpoint, crtfc_key=key, corp_code=corp_code,
+                         bgn_de=f"{bgn:%Y%m%d}", end_de=f"{end:%Y%m%d}")
+        except Exception:
+            time.sleep(0.2)
+            continue
+        if d.get("status") != "000":
+            time.sleep(0.2)
+            continue
+        for r in d.get("list", []):
+            rows.append(dart_row(r, kind))
+        time.sleep(0.2)
+
+    # 최신순, 금액이 있는 건 우선
+    rows.sort(key=lambda r: (bool(r["amount"]), r["date"]), reverse=True)
+    return rows
+
+
+def dart_date(raw):
+    """'2026년 08월 26일' → '2026-08-26'"""
+    m = re.search(r"(\d{4})\D+(\d{1,2})\D+(\d{1,2})", str(raw or ""))
+    return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}" if m else ""
+
+
+def dart_row(r, kind):
+    """공시 필드를 표 한 행으로 옮긴다. 없는 값은 None으로 두고 절대 계산하지 않는다."""
+    # 지분 양수/양도는 발행회사가 Target, 영업 양수/양도는 거래상대방이 Target
+    tidy = lambda v: re.sub(r"\s+", " ", str(v)).strip() if v else None
+    target = tidy(r.get("iscmp_cmpnm") or r.get("dlptn_cmpnm"))
+    sector = tidy(r.get("iscmp_mbsn") or r.get("inh_bsn") or r.get("dlptn_mbsn"))
+    amount = krw(r.get("inhdtl_inhprc") or r.get("inh_prc") or r.get("trfdtl_trfprc"))
+    stake = pct(r.get("atinh_eqrt"))
+    return {
+        "date": dart_date(r.get("bddd")),
+        "investors": [r.get("corp_name")] if r.get("corp_name") else [],
+        "target": (target or "").strip()[:40] or None,
+        "sector": (sector or "").strip()[:32] or None,
+        "round": kind,                       # M&A라 VC 라운드 개념이 없다. 거래 유형을 넣는다
+        "ev": None,                          # 공시의 외부평가 의견은 자유 서술이라 숫자로 옮기지 않는다
+        "amount": amount,
+        "stake": stake,
+        "title": f"{r.get('corp_name','')} {kind} 공시",
+        "url": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={r.get('rcept_no','')}",
+        "source": "DART 공시",
+        "from_dart": True,
+    }
+
+
 # --------------------------------------------------------- 시세 (네이버 금융)
 # 1세대 대시보드에서 두영이 명시적으로 요청했던 구성: 국장 / 미장 / 환율 / 반도체주.
 # 네이버 금융 모바일 엔드포인트라 키가 필요 없다. 비공식 API이므로 실패해도 뉴스 수집은 계속된다.
@@ -484,14 +749,30 @@ def collect(config):
         stats[cat["id"]] = {"raw": len(raw), "unique": len(deduped), "shown": len(clustered)}
         log(f"[{cat['name']}] 원본 {len(raw)} → 차단 {blocked} → 중복제거 {len(deduped)} → 묶음 {len(clustered)}")
 
+    log("최근 딜 수집")
+    deals = []
+    dart_key = os.environ.get("DART_API_KEY", "").strip()
+    if dart_key:
+        try:
+            deals = dart_deals(dart_key)
+            log(f"  DART 공시 딜 {len(deals)}건")
+        except Exception as e:
+            log(f"  ! DART 실패({type(e).__name__}: {e}) - 뉴스만 사용")
+    else:
+        log("  DART_API_KEY 없음 - 뉴스에서만 추출")
+    deals += collect_deals(threshold, shingle_size)
+    deals = deals[:40]
+    withamt = sum(1 for d in deals if d.get("amount"))
+    log(f"딜 {len(deals)}건 (금액 있는 것 {withamt}건)")
+
     log("시세 수집")
     market = fetch_market()
     log(f"시세 {len(market)}/{len(MARKET_ITEMS)}건")
 
-    return result, stats, use_naver, market
+    return result, stats, use_naver, market, deals
 
 
-def write_output(config, articles, stats, use_naver, market):
+def write_output(config, articles, stats, use_naver, market, deals):
     now = datetime.now(KST)
     slot = "morning" if now.hour < 13 else "evening"
     payload = {
@@ -505,6 +786,8 @@ def write_output(config, articles, stats, use_naver, market):
         ],
         "stats": stats,
         "market": market,
+        "deals": deals,
+        "dart_enabled": bool(os.environ.get("DART_API_KEY", "").strip()),
         "articles": articles,
     }
 
@@ -520,6 +803,7 @@ def write_output(config, articles, stats, use_naver, market):
         cid: [{k: v for k, v in a.items() if k != "related"} for a in arts[:ARCHIVE_PER_CATEGORY]]
         for cid, arts in articles.items()
     }
+    slim["deals"] = []
     slim["slim"] = True
     stamp = f"{now:%Y-%m-%d}-{slot}"
     with open(os.path.join(ARCHIVE_DIR, f"{stamp}.json"), "w", encoding="utf-8") as f:
@@ -567,7 +851,7 @@ def main():
     with open(CONFIG_PATH, encoding="utf-8") as f:
         config = json.load(f)
 
-    articles, stats, use_naver, market = collect(config)
+    articles, stats, use_naver, market, deals = collect(config)
     total = sum(len(v) for v in articles.values())
     if total == 0:
         log("!! 수집된 기사가 0건이다. 기존 데이터를 덮어쓰지 않고 종료한다.")
@@ -581,7 +865,7 @@ def main():
                 print(f"  · {a['title'][:60]}  [{a['source']}]{extra}")
         return 0
 
-    write_output(config, articles, stats, use_naver, market)
+    write_output(config, articles, stats, use_naver, market, deals)
     return 0
 
 

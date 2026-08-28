@@ -10,6 +10,7 @@ const state = {
   snapshots: [],       // 아카이브 목록
   tab: 'home',
   query: '',
+  dealsOpen: false,
   loading: true,
 };
 
@@ -136,6 +137,67 @@ function cardHtml(a, catId, opts = {}) {
     </article>`;
 }
 
+/* ---------------------------------------------------------- 딜 테이블 */
+
+const NA = '<span class="na">정보 없음</span>';
+const DEALS_PREVIEW = 8;   // 표가 화면을 다 잡아먹지 않게 처음엔 이만큼만 보여준다
+
+function cell(v) {
+  return v ? escapeHtml(v) : NA;
+}
+
+function dealsHtml() {
+  const rows = state.data?.deals || [];
+  if (!rows.length) return '';
+
+  const shown = state.dealsOpen ? rows : rows.slice(0, DEALS_PREVIEW);
+  const body = shown.map((r) => `
+    <tr>
+      <td class="c-date">${escapeHtml((r.date || '').slice(2).replace(/-/g, '.'))}</td>
+      <td>${r.investors && r.investors.length ? escapeHtml(r.investors.join('·')) : NA}</td>
+      <td class="c-target">${cell(r.target)}</td>
+      <td>${cell(r.sector)}</td>
+      <td>${cell(r.round)}</td>
+      <td class="c-num">${cell(r.ev)}</td>
+      <td class="c-num">${cell(r.amount)}</td>
+      <td class="c-num">${cell(r.stake)}</td>
+      <td class="c-src">
+        <a href="${escapeHtml(r.url)}" target="_blank" rel="noopener"
+           title="${escapeHtml(r.title)}">${escapeHtml(r.source)} ↗</a>
+      </td>
+    </tr>`).join('');
+
+  return `
+    <section class="deals">
+      <div class="section-head">
+        <h2 class="section-title">💰 최근 딜
+          <span class="section-desc">투자 유치 · 인수 · 매각</span></h2>
+        <span class="section-desc">${rows.length}건</span>
+      </div>
+      <div class="table-scroll">
+        <table class="deal-table">
+          <thead>
+            <tr>
+              <th>일자</th><th>투자자</th><th>Target</th><th>분야</th><th>라운드</th>
+              <th>기업가치(EV)</th><th>투자금액</th><th>투자 후 지분율</th><th>출처</th>
+            </tr>
+          </thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>
+      ${rows.length > DEALS_PREVIEW ? `
+        <button class="deals-more" id="deals-more">
+          ${state.dealsOpen ? '접기 ▴' : `딜 ${rows.length - DEALS_PREVIEW}건 더보기 ▾`}
+        </button>` : ''}
+      <p class="deals-note">
+        기사에서 확실히 읽히는 값만 채웁니다. 원문에 없으면 추정하지 않고 <b>정보 없음</b>으로 둡니다.
+        ${state.data?.dart_enabled
+          ? '상장사 딜은 DART 공시에서 가져와 금액·지분율이 정확합니다.'
+          : 'DART 인증키를 넣으면 상장사 딜의 투자금액·지분율이 공시 기준으로 정확히 채워집니다.'}
+      </p>
+    </section>`;
+}
+
 /* ---------------------------------------------------------- 시세 스트립 */
 
 function marketHtml() {
@@ -202,6 +264,7 @@ function renderHome() {
     html += `
       <section>
         ${c.id === 'economy' ? marketHtml() : ''}
+        ${c.id === 'mna' ? dealsHtml() : ''}
         <div class="section-head">
           <h2 class="section-title">${c.emoji || ''} ${escapeHtml(c.name)}
             <span class="section-desc">${escapeHtml(c.desc || '')}</span></h2>
@@ -230,6 +293,7 @@ function renderCategory(catId) {
   const items = itemsFor(catId);
   view.innerHTML = `
     ${catId === 'economy' ? marketHtml() : ''}
+    ${catId === 'mna' ? dealsHtml() : ''}
     <div class="section-head">
       <h2 class="section-title">${c.emoji || ''} ${escapeHtml(c.name)}
         <span class="section-desc">${escapeHtml(c.desc || '')}</span></h2>
@@ -335,6 +399,13 @@ document.addEventListener('click', (e) => {
     star.classList.toggle('on', nowSaved);
     star.textContent = nowSaved ? '★' : '☆';
     if (state.tab === 'saved') render(); else renderTabs();
+    return;
+  }
+
+  if (e.target.closest('#deals-more')) {
+    state.dealsOpen = !state.dealsOpen;
+    render();
+    document.querySelector('.deals')?.scrollIntoView({ block: 'start' });
     return;
   }
 

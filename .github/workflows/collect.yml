@@ -25,8 +25,10 @@ jobs:
 
       - name: 뉴스 수집
         env:
-          # Settings → Secrets and variables → Actions 에 등록하면 네이버도 함께 수집한다.
-          # 없으면 구글뉴스만으로 동작한다.
+          # DART 인증키. M&A 탭 딜 테이블의 투자금액·지분율을 공시에서 정확히 가져온다.
+          # 없으면 딜 테이블은 뉴스에서 뽑은 값만으로 채워진다.
+          DART_API_KEY: ${{ secrets.DART_API_KEY }}
+          # 네이버 검색 API는 유료 이관되어 현재 미사용. 키가 등록되면 자동으로 붙는다.
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
         run: python collect.py

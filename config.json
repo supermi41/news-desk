@@ -2,7 +2,7 @@
   "site": {
     "title": "DJ News Desk",
     "timezone": "Asia/Seoul",
-    "max_per_category": 50,
+    "max_per_category": 120,
     "archive_keep_days": 45
   },
   "dedupe": {
