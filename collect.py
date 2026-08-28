@@ -35,7 +35,9 @@ ARCHIVE_DIR = os.path.join(DATA_DIR, "archive")
 
 KST = timezone(timedelta(hours=9))
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
-REQUEST_GAP = 0.4  # 초. 소스에 예의를 지킨다.
+REQUEST_GAP = 0.4        # 초. 소스에 예의를 지킨다.
+RELATED_LINK_LIMIT = 12  # 관련기사 링크 저장 상한 (용량 관리)
+ARCHIVE_PER_CATEGORY = 30  # 아카이브 스냅샷에 남길 카테고리당 기사 수
 
 
 # ---------------------------------------------------------------- 공통 유틸
@@ -64,10 +66,19 @@ def log(msg):
     print(f"[{datetime.now(KST):%H:%M:%S}] {msg}", flush=True)
 
 
-def fetch(url, headers=None, timeout=20):
+_fetch_cache = {}
+
+
+def fetch(url, headers=None, timeout=20, cache=False):
+    """cache=True면 같은 URL을 한 번만 내려받는다. 언론사 피드를 여러 카테고리가 공유한다."""
+    if cache and url in _fetch_cache:
+        return _fetch_cache[url]
     req = urllib.request.Request(url, headers={"User-Agent": UA, **(headers or {})})
     with urllib.request.urlopen(req, timeout=timeout) as res:
-        return res.read()
+        body = res.read()
+    if cache:
+        _fetch_cache[url] = body
+    return body
 
 
 def clean_text(s):
@@ -190,12 +201,30 @@ def cluster_articles(articles, threshold, shingle_size):
         else:
             clusters.append({"rep": art, "keys": {key}, "members_sh": [sh], "related": []})
 
+    # greedy 배정은 같은 사건을 두 클러스터로 가르기 쉽다.
+    # 클러스터끼리 다시 비교해서 겹치면 합친다.
+    merged = True
+    while merged:
+        merged = False
+        for i in range(len(clusters)):
+            for j in range(len(clusters) - 1, i, -1):
+                a, b = clusters[i], clusters[j]
+                if any(jaccard(x, y) >= threshold for x in a["members_sh"] for y in b["members_sh"]):
+                    a["related"].append(b["rep"])
+                    a["related"].extend(b["related"])
+                    a["members_sh"].extend(b["members_sh"])
+                    a["keys"] |= b["keys"]
+                    clusters.pop(j)
+                    merged = True
+
     out = []
     for c in clusters:
         members = [c["rep"]] + c["related"]
         # 대표는 포털이 아닌 언론사 중 가장 최신 기사로 고른다
         real = [m for m in members if not is_aggregator(m["source"])]
-        pick = real[0] if real else members[0]
+        # 요약(스니펫)이 붙은 기사를 대표로 올려야 카드가 풍성해진다
+        pick = next((m for m in real if m.get("summary")), None) \
+            or (real[0] if real else members[0])
         c["related"] = [m for m in members if m is not pick]
         rep = dict(pick)
         # 대표 기사에 요약 스니펫이 없으면, 묶인 기사 중 있는 걸 끌어온다
@@ -204,9 +233,13 @@ def cluster_articles(articles, threshold, shingle_size):
                 if r.get("summary"):
                     rep["summary"] = r["summary"]
                     break
+        rest = [m for m in members if m is not pick]
+        rest.sort(key=lambda m: m["published"], reverse=True)
+        rep["related_total"] = len(rest)
+        # URL이 기사당 평균 177자라 용량을 많이 먹는다. 링크는 최신 12건까지만 싣는다.
         rep["related"] = [
             {"title": r["title"], "url": r["url"], "source": r["source"], "published": r["published"]}
-            for r in c["related"]
+            for r in rest[:RELATED_LINK_LIMIT]
         ]
         out.append(rep)
     return out
@@ -314,6 +347,71 @@ NAVER_HOST_NAMES = {
 }
 
 
+def publisher_feed(feed):
+    """언론사 RSS 하나를 읽고, keywords가 있으면 제목·요약에 걸리는 것만 남긴다."""
+    items = parse_rss(fetch(feed["url"], cache=True), feed["name"])
+    kws = feed.get("keywords")
+    if kws:
+        items = [
+            it for it in items
+            if any(k in it["title"] or k in it["summary"] for k in kws)
+        ]
+    return items
+
+
+# --------------------------------------------------------- 시세 (네이버 금융)
+# 1세대 대시보드에서 두영이 명시적으로 요청했던 구성: 국장 / 미장 / 환율 / 반도체주.
+# 네이버 금융 모바일 엔드포인트라 키가 필요 없다. 비공식 API이므로 실패해도 뉴스 수집은 계속된다.
+
+MOBILE_UA = ("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 "
+             "(KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1")
+
+MARKET_ITEMS = [
+    ("국장", "코스피", "https://m.stock.naver.com/api/index/KOSPI/basic",
+     "https://m.stock.naver.com/domestic/index/KOSPI/total"),
+    ("국장", "코스닥", "https://m.stock.naver.com/api/index/KOSDAQ/basic",
+     "https://m.stock.naver.com/domestic/index/KOSDAQ/total"),
+    ("미장", "다우", "https://api.stock.naver.com/index/.DJI/basic",
+     "https://m.stock.naver.com/worldstock/index/.DJI/total"),
+    ("미장", "S&P 500", "https://api.stock.naver.com/index/.INX/basic",
+     "https://m.stock.naver.com/worldstock/index/.INX/total"),
+    ("미장", "나스닥", "https://api.stock.naver.com/index/.IXIC/basic",
+     "https://m.stock.naver.com/worldstock/index/.IXIC/total"),
+    ("환율", "원·달러", "EXCHANGE",
+     "https://m.stock.naver.com/marketindex/exchange/FX_USDKRW"),
+    ("반도체", "삼성전자", "https://m.stock.naver.com/api/stock/005930/basic",
+     "https://m.stock.naver.com/domestic/stock/005930/total"),
+    ("반도체", "SK하이닉스", "https://m.stock.naver.com/api/stock/000660/basic",
+     "https://m.stock.naver.com/domestic/stock/000660/total"),
+]
+
+EXCHANGE_URL = ("https://m.stock.naver.com/front-api/marketIndex/productDetail"
+                "?category=exchange&reutersCode=FX_USDKRW")
+
+
+def fetch_market():
+    out = []
+    for group, name, api, link in MARKET_ITEMS:
+        try:
+            if api == "EXCHANGE":
+                d = json.loads(fetch(EXCHANGE_URL, headers={"User-Agent": MOBILE_UA}))["result"]
+            else:
+                d = json.loads(fetch(api, headers={"User-Agent": MOBILE_UA}))
+            price = d.get("closePrice")
+            diff = d.get("compareToPreviousClosePrice") or d.get("fluctuations")
+            ratio = d.get("fluctuationsRatio")
+            if price is None or ratio is None:
+                continue
+            out.append({
+                "group": group, "name": name, "price": str(price),
+                "diff": str(diff), "ratio": float(str(ratio).replace(",", "")), "url": link,
+            })
+        except Exception as e:
+            log(f"  ! 시세 실패 {name} ({type(e).__name__}) - 건너뜀")
+        time.sleep(0.25)
+    return out
+
+
 def safe(fn, *args, **kwargs):
     """소스 하나가 죽어도 전체 수집은 계속되게 한다."""
     try:
@@ -358,9 +456,10 @@ def collect(config):
             for q in src.get("naver_search", []):
                 raw += safe(naver_search, q, cid, secret)
         for feed in pub_feeds:
-            if feed.get("enabled") and feed.get("category") == cat["id"]:
-                log(f"  언론사 RSS: {feed['name']}")
-                raw += safe(lambda u=feed["url"], n=feed["name"]: parse_rss(fetch(u), n))
+            if feed.get("enabled", True) and feed.get("category") == cat["id"]:
+                got = safe(publisher_feed, feed)
+                log(f"  언론사 RSS: {feed['name']} → {len(got)}건")
+                raw += got
 
         # URL 기준 1차 제거
         seen_urls = set()
@@ -378,17 +477,21 @@ def collect(config):
 
         deduped.sort(key=lambda a: a["published"], reverse=True)
         clustered = cluster_articles(deduped, threshold, shingle_size)
-        clustered.sort(key=lambda a: (len(a["related"]), a["published"]), reverse=True)
+        clustered.sort(key=lambda a: (a["related_total"], a["published"]), reverse=True)
         clustered = clustered[:max_per_cat]
 
         result[cat["id"]] = clustered
         stats[cat["id"]] = {"raw": len(raw), "unique": len(deduped), "shown": len(clustered)}
         log(f"[{cat['name']}] 원본 {len(raw)} → 차단 {blocked} → 중복제거 {len(deduped)} → 묶음 {len(clustered)}")
 
-    return result, stats, use_naver
+    log("시세 수집")
+    market = fetch_market()
+    log(f"시세 {len(market)}/{len(MARKET_ITEMS)}건")
+
+    return result, stats, use_naver, market
 
 
-def write_output(config, articles, stats, use_naver):
+def write_output(config, articles, stats, use_naver, market):
     now = datetime.now(KST)
     slot = "morning" if now.hour < 13 else "evening"
     payload = {
@@ -401,6 +504,7 @@ def write_output(config, articles, stats, use_naver):
             for c in config["categories"]
         ],
         "stats": stats,
+        "market": market,
         "articles": articles,
     }
 
@@ -409,9 +513,17 @@ def write_output(config, articles, stats, use_naver):
     with open(latest, "w", encoding="utf-8") as f:
         json.dump(payload, f, ensure_ascii=False, separators=(",", ":"))
 
+    # 아카이브는 "그날 뭐가 이슈였나" 훑는 용도라 가볍게 저장한다.
+    # 관련기사 링크를 빼면 절반 이하로 줄어든다 (URL이 용량의 45%를 차지한다).
+    slim = dict(payload)
+    slim["articles"] = {
+        cid: [{k: v for k, v in a.items() if k != "related"} for a in arts[:ARCHIVE_PER_CATEGORY]]
+        for cid, arts in articles.items()
+    }
+    slim["slim"] = True
     stamp = f"{now:%Y-%m-%d}-{slot}"
     with open(os.path.join(ARCHIVE_DIR, f"{stamp}.json"), "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, separators=(",", ":"))
+        json.dump(slim, f, ensure_ascii=False, separators=(",", ":"))
 
     prune_archive(config)
     rebuild_index()
@@ -455,7 +567,7 @@ def main():
     with open(CONFIG_PATH, encoding="utf-8") as f:
         config = json.load(f)
 
-    articles, stats, use_naver = collect(config)
+    articles, stats, use_naver, market = collect(config)
     total = sum(len(v) for v in articles.values())
     if total == 0:
         log("!! 수집된 기사가 0건이다. 기존 데이터를 덮어쓰지 않고 종료한다.")
@@ -469,7 +581,7 @@ def main():
                 print(f"  · {a['title'][:60]}  [{a['source']}]{extra}")
         return 0
 
-    write_output(config, articles, stats, use_naver)
+    write_output(config, articles, stats, use_naver, market)
     return 0
 
 

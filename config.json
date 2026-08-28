@@ -3,7 +3,7 @@
     "title": "DJ News Desk",
     "timezone": "Asia/Seoul",
     "max_per_category": 50,
-    "archive_keep_days": 60
+    "archive_keep_days": 45
   },
   "dedupe": {
     "similarity_threshold": 0.32,
@@ -122,14 +122,193 @@
     }
   ],
   "publisher_rss": {
-    "enabled": false,
-    "_comment": "나중에 언론사 RSS를 직접 붙이고 싶을 때 enabled=true로 바꾸고 feeds에 추가. category는 위 id 중 하나.",
+    "enabled": true,
+    "_comment": "언론사 RSS는 구글뉴스와 달리 진짜 요약(스니펫)을 준다. keywords가 있으면 제목·요약에 걸리는 기사만 채택한다.",
     "feeds": [
       {
+        "category": "mna",
+        "name": "연합뉴스",
+        "url": "https://www.yna.co.kr/rss/economy.xml",
+        "keywords": [
+          "인수",
+          "합병",
+          "M&A",
+          "매각",
+          "지분",
+          "사모펀드",
+          "PEF",
+          "투자유치",
+          "투자 유치",
+          "우선협상",
+          "본입찰",
+          "기업회생",
+          "워크아웃",
+          "채권단",
+          "상장 예비심사",
+          "IPO",
+          "엑시트"
+        ]
+      },
+      {
+        "category": "mna",
+        "name": "연합뉴스",
+        "url": "https://www.yna.co.kr/rss/industry.xml",
+        "keywords": [
+          "인수",
+          "합병",
+          "M&A",
+          "매각",
+          "지분",
+          "사모펀드",
+          "PEF",
+          "투자유치",
+          "투자 유치",
+          "우선협상",
+          "본입찰",
+          "기업회생",
+          "워크아웃",
+          "채권단",
+          "상장 예비심사",
+          "IPO",
+          "엑시트"
+        ]
+      },
+      {
+        "category": "mna",
+        "name": "조선비즈",
+        "url": "https://biz.chosun.com/arc/outboundfeeds/rss/?outputType=xml",
+        "keywords": [
+          "인수",
+          "합병",
+          "M&A",
+          "매각",
+          "지분",
+          "사모펀드",
+          "PEF",
+          "투자유치",
+          "투자 유치",
+          "우선협상",
+          "본입찰",
+          "기업회생",
+          "워크아웃",
+          "채권단",
+          "상장 예비심사",
+          "IPO",
+          "엑시트"
+        ]
+      },
+      {
+        "category": "mna",
+        "name": "머니투데이",
+        "url": "https://rss.mt.co.kr/mt_news.xml",
+        "keywords": [
+          "인수",
+          "합병",
+          "M&A",
+          "매각",
+          "지분",
+          "사모펀드",
+          "PEF",
+          "투자유치",
+          "투자 유치",
+          "우선협상",
+          "본입찰",
+          "기업회생",
+          "워크아웃",
+          "채권단",
+          "상장 예비심사",
+          "IPO",
+          "엑시트"
+        ]
+      },
+      {
+        "category": "kfood",
+        "name": "식품음료신문",
+        "url": "https://www.thinkfood.co.kr/rss/allArticle.xml"
+      },
+      {
+        "category": "kfood",
+        "name": "연합뉴스",
+        "url": "https://www.yna.co.kr/rss/industry.xml",
+        "keywords": [
+          "프랜차이즈",
+          "외식",
+          "가맹",
+          "F&B",
+          "식품",
+          "급식",
+          "카페",
+          "편의점",
+          "배달앱",
+          "K푸드",
+          "케이푸드",
+          "음료",
+          "주류",
+          "레스토랑",
+          "먹거리"
+        ]
+      },
+      {
+        "category": "kfood",
+        "name": "조선비즈",
+        "url": "https://biz.chosun.com/arc/outboundfeeds/rss/?outputType=xml",
+        "keywords": [
+          "프랜차이즈",
+          "외식",
+          "가맹",
+          "F&B",
+          "식품",
+          "급식",
+          "카페",
+          "편의점",
+          "배달앱",
+          "K푸드",
+          "케이푸드",
+          "음료",
+          "주류",
+          "레스토랑",
+          "먹거리"
+        ]
+      },
+      {
+        "category": "politics",
+        "name": "연합뉴스",
+        "url": "https://www.yna.co.kr/rss/politics.xml"
+      },
+      {
+        "category": "politics",
+        "name": "매일경제",
+        "url": "https://www.mk.co.kr/rss/30200030/"
+      },
+      {
         "category": "economy",
-        "name": "예시: 한국경제",
-        "url": "https://example.com/rss.xml",
-        "enabled": false
+        "name": "연합뉴스",
+        "url": "https://www.yna.co.kr/rss/economy.xml"
+      },
+      {
+        "category": "economy",
+        "name": "매일경제",
+        "url": "https://www.mk.co.kr/rss/30100041/"
+      },
+      {
+        "category": "economy",
+        "name": "머니투데이",
+        "url": "https://rss.mt.co.kr/mt_news.xml"
+      },
+      {
+        "category": "economy",
+        "name": "조선비즈",
+        "url": "https://biz.chosun.com/arc/outboundfeeds/rss/?outputType=xml"
+      },
+      {
+        "category": "world",
+        "name": "연합뉴스",
+        "url": "https://www.yna.co.kr/rss/international.xml"
+      },
+      {
+        "category": "world",
+        "name": "매일경제",
+        "url": "https://www.mk.co.kr/rss/30300018/"
       }
     ]
   }
