@@ -40,10 +40,12 @@ docs/                   GitHub Pages 루트
 | 소스 | 키 필요 | 상태 |
 |---|---|---|
 | Google News RSS | 불필요 | 사용 중 |
-| Naver 검색 API | Client ID/Secret | 키 등록 시 자동 활성화 |
-| 언론사 RSS 직접 | 불필요 | 자리만 열어둠 (`config.json` → `publisher_rss`) |
+| 언론사 RSS (연합·매경·머니투데이·조선비즈·식품음료신문) | 불필요 | 사용 중 |
+| 네이버 금융 (시세) | 불필요 | 사용 중 |
+| Naver 검색 API | Client ID/Secret | **네이버클라우드 API HUB로 유료 이관됨. 미사용** |
 
-구글뉴스 RSS는 기사 요약 스니펫을 주지 않는다. **네이버 키를 넣으면 카드에 2줄 미리보기가 붙는다.**
+구글뉴스 RSS는 기사 요약 스니펫을 주지 않는다. **언론사 RSS가 진짜 요약을 주므로** 이쪽으로 채운다.
+언론사 피드는 카테고리 전체를 주기 때문에, M&A·K-Food는 `config.json`의 `keywords`로 걸러 쓴다.
 
 ### 네이버 키 등록
 
