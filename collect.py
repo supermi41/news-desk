@@ -38,6 +38,7 @@ KST = timezone(timedelta(hours=9))
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
 REQUEST_GAP = 0.4        # 초. 소스에 예의를 지킨다.
 RELATED_LINK_LIMIT = 12  # 관련기사 링크 저장 상한 (용량 관리)
+DEAL_KEEP_DAYS = 31      # 딜 표에 남길 기간
 HOME_PER_CATEGORY = 10   # latest.json(홈)에 담을 카테고리당 기사 수
 ARCHIVE_PER_CATEGORY = 30  # 아카이브 스냅샷에 남길 카테고리당 기사 수
 
@@ -478,6 +479,7 @@ def deal_row(article):
         "ev": f"{ev.group(1)}{ev.group(2)}원" if ev else None,
         "amount": amount,
         "stake": f"{stake.group(1)}%" if stake else None,
+        "headline": title,
         "title": title,
         "url": article["url"],
         "source": article["source"],
@@ -574,15 +576,19 @@ def load_existing_titles():
             with open(os.path.join(STORE_DIR, name), encoding="utf-8") as f:
                 for a in json.load(f).get("articles", []):
                     if a.get("title_ko"):
-                        cache[a["url"]] = a["title_ko"]
+                        cache[a["url"]] = (a["title_ko"], a.get("summary_ko"))
         except (json.JSONDecodeError, OSError):
             continue
     return cache
 
 
 def translate_foreign(articles_by_cat):
-    """외신 기사 제목에 한국어 번역을 붙인다. 실패하면 원문 그대로 둔다."""
+    """
+    외신 기사에 한국어 번역을 붙인다. 실패하면 원문 그대로 둔다.
+    이메일이 등록돼 있으면 하루 한도가 50,000단어로 늘어나 요약까지 번역한다.
+    """
     email = os.environ.get("TRANSLATE_EMAIL", "").strip()
+    do_summary = bool(email)          # 익명 한도로는 제목까지가 한계다
     cache = load_existing_titles()
     todo = []
     for arts in articles_by_cat.values():
@@ -591,7 +597,11 @@ def translate_foreign(articles_by_cat):
                 continue
             hit = cache.get(a["url"])
             if hit:
-                a["title_ko"] = hit
+                a["title_ko"] = hit[0]
+                if hit[1]:
+                    a["summary_ko"] = hit[1]
+                if do_summary and not hit[1] and a.get("summary"):
+                    todo.append(a)       # 제목은 있는데 요약이 없으면 요약만 채운다
             else:
                 todo.append(a)
 
@@ -599,14 +609,22 @@ def translate_foreign(articles_by_cat):
         log("  번역할 새 외신 없음")
         return
     todo = todo[:TRANSLATE_MAX]
-    done = 0
+    t_done = s_done = 0
     for a in todo:
-        ko = translate_ko(a["title"], email)
-        if ko:
-            a["title_ko"] = ko
-            done += 1
-        time.sleep(0.25)
-    log(f"  외신 제목 번역 {done}/{len(todo)}건" + (" (이메일 등록됨)" if email else " (익명 한도)"))
+        if not a.get("title_ko"):
+            ko = translate_ko(a["title"], email)
+            if ko:
+                a["title_ko"] = ko
+                t_done += 1
+            time.sleep(0.25)
+        if do_summary and a.get("summary") and not a.get("summary_ko"):
+            ko = translate_ko(a["summary"], email)
+            if ko:
+                a["summary_ko"] = ko
+                s_done += 1
+            time.sleep(0.25)
+    log(f"  외신 번역 — 제목 {t_done}건 / 요약 {s_done}건"
+        + (" (이메일 등록, 하루 5만 단어)" if email else " (익명 한도, 제목만)"))
 
 
 # --------------------------------------------------------- 딜 (DART 공시)
@@ -759,6 +777,7 @@ def dart_row(r, kind):
         "ev": dart_ev(r.get("exevl_op")),
         "amount": amount,
         "stake": stake,
+        "headline": f"{r.get('corp_name','')} — {target or ''} {kind}".strip(),
         "title": f"{r.get('corp_name','')} {kind} 공시",
         "url": f"https://dart.fss.or.kr/dsaf001/main.do?rcpNo={r.get('rcept_no','')}",
         "source": "DART 공시",
@@ -906,6 +925,14 @@ def collect(config):
     else:
         log("  DART_API_KEY 없음 - 뉴스에서만 추출")
     deals += collect_deals(threshold, shingle_size)
+    # 최근 한 달치만, 날짜 최신순으로 정리한다.
+    # 아무 값도 못 읽은 행은 표에 있어봐야 읽을 게 없으므로 버린다.
+    cutoff = (datetime.now(KST) - timedelta(days=DEAL_KEEP_DAYS)).strftime("%Y-%m-%d")
+    def has_content(r):
+        return bool(r.get("target") or r.get("amount") or r.get("round")
+                    or r.get("ev") or r.get("stake") or r.get("investors"))
+    deals = [r for r in deals if r.get("date", "") >= cutoff and has_content(r)]
+    deals.sort(key=lambda r: r.get("date", ""), reverse=True)
     deals = deals[:80]
     withamt = sum(1 for d in deals if d.get("amount"))
     log(f"딜 {len(deals)}건 (금액 있는 것 {withamt}건)")

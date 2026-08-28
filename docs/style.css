@@ -88,7 +88,8 @@ body {
 }
 .icon-btn .ico { font-size: 13px; }
 .icon-btn:hover, .icon-btn.on { background: var(--bg-sunken); color: var(--text); }
-.icon-btn.spin { animation: spin .8s linear infinite; }
+/* 아이콘만 돌린다. 버튼 전체가 돌면 글자까지 돌아 어지럽다. */
+.ico.spin { display: inline-block; animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
 .meta-line {
@@ -491,7 +492,21 @@ main { padding: 4px 14px 32px; max-width: 780px; margin: 0 auto; }
   font-weight: 700;
 }
 .deal-table tbody tr:last-child td { border-bottom: 0; }
-.deal-table .c-target { font-weight: 700; color: var(--text); }
+.deal-table .c-target {
+  font-weight: 700;
+  color: var(--text);
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Target을 못 읽은 행은 기사 제목으로 대신 보여준다 */
+.deal-table .c-head { font-weight: 500; color: var(--text-dim); }
+/* 분야는 공시 문구가 길어 잘라 쓴다 */
+.deal-table td:nth-child(4) {
+  max-width: 210px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .deal-table .c-num { font-variant-numeric: tabular-nums; }
 .deal-table .c-date { color: var(--text-faint); font-variant-numeric: tabular-nums; }
 .deal-table .c-src a { color: var(--accent); text-decoration: none; font-size: 11.5px; }

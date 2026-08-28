@@ -28,6 +28,8 @@ jobs:
           # DART 인증키. M&A 탭 딜 테이블의 투자금액·지분율을 공시에서 정확히 가져온다.
           # 없으면 딜 테이블은 뉴스에서 뽑은 값만으로 채워진다.
           DART_API_KEY: ${{ secrets.DART_API_KEY }}
+          # 있으면 외신 요약까지 번역한다 (MyMemory 한도 5,000 → 50,000단어)
+          TRANSLATE_EMAIL: ${{ secrets.TRANSLATE_EMAIL }}
           # 네이버 검색 API는 유료 이관되어 현재 미사용. 키가 등록되면 자동으로 붙는다.
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}

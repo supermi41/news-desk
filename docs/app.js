@@ -111,8 +111,9 @@ function cardHtml(a, catId, opts = {}) {
   const headline = a.title_ko || a.title;
   const original = a.title_ko
     ? `<p class="card-original">${highlight(a.title, q)}</p>` : '';
-  const summary = a.summary
-    ? `<p class="card-summary">${highlight(a.summary, q)}</p>` : '';
+  const body = a.summary_ko || a.summary;
+  const summary = body
+    ? `<p class="card-summary">${highlight(body, q)}</p>` : '';
 
   const relBtn = relTotal
     ? `<button class="rel-toggle" data-rel="${relId}" data-total="${relTotal}">관련 ${relTotal}건 ▾</button>` : '';
@@ -169,7 +170,9 @@ function dealsHtml() {
     <tr>
       <td class="c-date">${escapeHtml((r.date || '').slice(2).replace(/-/g, '.'))}</td>
       <td>${r.investors && r.investors.length ? escapeHtml(r.investors.join('·')) : NA}</td>
-      <td class="c-target">${cell(r.target)}</td>
+      <td class="c-target">${r.target
+        ? escapeHtml(r.target)
+        : (r.headline ? `<span class="c-head" title="${escapeHtml(r.headline)}">${escapeHtml(r.headline)}</span>` : NA)}</td>
       <td>${cell(r.sector)}</td>
       <td>${cell(r.round)}</td>
       <td class="c-num">${cell(r.ev)}</td>
@@ -566,10 +569,13 @@ $('#archive-latest').addEventListener('click', () => {
 });
 
 $('#btn-refresh').addEventListener('click', async (e) => {
-  e.currentTarget.classList.add('spin');
+  const icon = e.currentTarget.querySelector('.ico');   // 버튼 전체가 돌면 어지럽다
+  icon?.classList.add('spin');
   await loadArchiveIndex();
   await loadSnapshot('data/latest.json');
-  e.currentTarget.classList.remove('spin');
+  state.store = {};
+  await preloadCategories();
+  icon?.classList.remove('spin');
 });
 
 /* ---------------------------------------------------------- 스와이프로 탭 전환 */
