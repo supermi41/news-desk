@@ -53,10 +53,16 @@ docs/                   GitHub Pages 루트
    - `NAVER_CLIENT_ID`
    - `NAVER_CLIENT_SECRET`
 
-로컬에서 테스트할 때는 환경변수로 넣는다:
+로컬에서는 `.env` 파일에 넣는다. `collect.py`가 자동으로 읽는다.
+
 ```bash
-NAVER_CLIENT_ID=xxx NAVER_CLIENT_SECRET=yyy python3 collect.py
+cp .env.example .env      # 최초 1회
+# .env 를 열어 두 줄의 값을 채운다
+python3 collect.py
 ```
+
+`.env`는 `.gitignore`에 있어 커밋되지 않는다.
+GitHub Actions는 `.env` 대신 저장소 Secrets를 쓰며, 환경변수가 이미 있으면 `.env`가 덮어쓰지 않는다.
 
 ## 로컬에서 돌려보기
 

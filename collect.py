@@ -40,6 +40,26 @@ REQUEST_GAP = 0.4  # 초. 소스에 예의를 지킨다.
 
 # ---------------------------------------------------------------- 공통 유틸
 
+def load_dotenv():
+    """
+    프로젝트 폴더의 .env 를 읽어 환경변수로 올린다. 외부 패키지를 쓰지 않는다.
+    이미 환경변수에 값이 있으면 덮어쓰지 않는다 (GitHub Actions의 Secrets 우선).
+    """
+    path = os.path.join(ROOT, ".env")
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, val = line.partition("=")
+            key = key.strip()
+            val = val.strip().strip('"').strip("'")
+            if key and not os.environ.get(key):
+                os.environ[key] = val
+
+
 def log(msg):
     print(f"[{datetime.now(KST):%H:%M:%S}] {msg}", flush=True)
 
@@ -429,6 +449,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true", help="파일을 쓰지 않고 결과 요약만 출력")
     args = ap.parse_args()
+
+    load_dotenv()
 
     with open(CONFIG_PATH, encoding="utf-8") as f:
         config = json.load(f)
