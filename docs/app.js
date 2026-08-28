@@ -4,12 +4,16 @@ const HOME_PREVIEW = 5;          // 홈 대시보드에서 카테고리당 보�
 const BM_KEY = 'newsdesk.bookmarks';
 const READ_KEY = 'newsdesk.read';
 const READ_MAX = 800;
+const PAGE_SIZE = 60;      // 카테고리 탭에서 한 번에 그리는 기사 수
 
 const state = {
-  data: null,          // 현재 보고 있는 스냅샷
+  data: null,          // 홈/메타 (latest.json)
+  store: {},           // 카테고리별 누적 기사 (cat/<id>.json). 필요할 때 받아서 캐시한다
+  storeLoading: {},
   snapshots: [],       // 아카이브 목록
   tab: 'home',
   query: '',
+  page: PAGE_SIZE,
   dealsOpen: false,
   loading: true,
 };
@@ -119,13 +123,14 @@ function cardHtml(a, catId, opts = {}) {
     </ul>` : '';
 
   const chip = opts.showCat ? `<span class="cat-chip">${escapeHtml(catName(catId))}</span>` : '';
+  const intl = a.lang === 'en' ? '<span class="intl-chip">외신</span>' : '';
 
   return `
     <article class="card${getRead().has(a.url) ? ' read' : ''}">
       <a class="card-title" href="${escapeHtml(a.url)}" target="_blank" rel="noopener">${highlight(a.title, q)}</a>
       ${summary}
       <div class="card-meta">
-        ${chip}
+        ${chip}${intl}
         <span class="src">${escapeHtml(a.source || '')}</span>
         <span class="dot">·</span>
         <span>${timeAgo(a.published)}</span>
@@ -232,8 +237,31 @@ function matches(a, q) {
 }
 
 function itemsFor(catId) {
-  const all = state.data?.articles?.[catId] || [];
+  // 누적 파일을 받아왔으면 그쪽이 전체다. 아직이면 홈에 실린 일부만 보여준다.
+  const all = state.store[catId] || state.data?.articles?.[catId] || [];
   return state.query ? all.filter((a) => matches(a, state.query)) : all;
+}
+
+function totalFor(catId) {
+  return state.store[catId]?.length ?? state.data?.totals?.[catId] ?? 0;
+}
+
+async function loadCategory(catId) {
+  if (state.store[catId] || state.storeLoading[catId] || state.data?.slim) return;
+  state.storeLoading[catId] = true;
+  try {
+    const res = await fetch(`data/cat/${catId}.json?t=${state.data?.generated_at || ''}`);
+    if (res.ok) state.store[catId] = (await res.json()).articles || [];
+  } catch { /* 못 받으면 홈에 실린 일부만 보여준다 */ }
+  state.storeLoading[catId] = false;
+  render();
+}
+
+// 첫 화면을 그린 뒤, 검색이 전체를 훑을 수 있도록 나머지 카테고리를 뒤에서 채운다
+async function preloadCategories() {
+  for (const c of state.data?.categories || []) {
+    await loadCategory(c.id);
+  }
 }
 
 /* ---------------------------------------------------------- 화면 */
@@ -243,7 +271,8 @@ function renderTabs() {
   const bmCount = readBookmarks().length;
   const tabs = [
     { id: 'home', label: '홈' },
-    ...cats.map((c) => ({ id: c.id, label: c.name, count: itemsFor(c.id).length })),
+    ...cats.map((c) => ({ id: c.id, label: c.name, count: state.query ? itemsFor(c.id).length : totalFor(c.id) })),
+    { id: 'sources', label: '📡 소스' },
     { id: 'saved', label: '★ 저장', count: bmCount },
   ];
   $('#tabs').innerHTML = tabs.map((t) => `
@@ -268,7 +297,7 @@ function renderHome() {
         <div class="section-head">
           <h2 class="section-title">${c.emoji || ''} ${escapeHtml(c.name)}
             <span class="section-desc">${escapeHtml(c.desc || '')}</span></h2>
-          <button class="more-btn" data-tab="${c.id}">전체 ${items.length} →</button>
+          <button class="more-btn" data-tab="${c.id}">전체 ${state.query ? items.length : totalFor(c.id)} →</button>
         </div>
         ${items.length
           ? items.slice(0, HOME_PREVIEW).map((a) => cardHtml(a, c.id)).join('')
@@ -291,17 +320,85 @@ function renderHome() {
 function renderCategory(catId) {
   const c = state.data.categories.find((x) => x.id === catId);
   const items = itemsFor(catId);
+  const shown = Math.min(state.page, items.length);
+  const loading = state.storeLoading[catId];
+
   view.innerHTML = `
     ${catId === 'economy' ? marketHtml() : ''}
     ${catId === 'mna' ? dealsHtml() : ''}
     <div class="section-head">
       <h2 class="section-title">${c.emoji || ''} ${escapeHtml(c.name)}
         <span class="section-desc">${escapeHtml(c.desc || '')}</span></h2>
-      <span class="section-desc">${items.length}건</span>
+      <span class="section-desc">${items.length}건${loading ? ' 불러오는 중…' : ''}</span>
     </div>
     ${items.length
-      ? items.map((a) => cardHtml(a, catId)).join('')
-      : `<p class="empty">${state.query ? '검색 결과가 없어요' : '수집된 기사가 없어요'}</p>`}`;
+      ? items.slice(0, shown).map((a) => cardHtml(a, catId)).join('')
+      : `<p class="empty">${state.query ? '검색 결과가 없어요'
+          : loading ? '불러오는 중…' : '수집된 기사가 없어요'}</p>`}
+    ${items.length > shown
+      ? `<button class="deals-more" id="more-articles">${items.length - shown}건 더보기 ▾</button>` : ''}`;
+
+  loadCategory(catId);
+}
+
+function renderSources() {
+  const groups = state.data?.sources || [];
+  const kinds = {};
+  for (const g of groups) for (const e of g.entries) kinds[e.kind] = (kinds[e.kind] || 0) + 1;
+
+  const summary = Object.entries(kinds)
+    .map(([k, n]) => `<span class="src-chip">${escapeHtml(k)} ${n}</span>`).join('');
+
+  const body = groups.map((g) => `
+    <section class="src-group">
+      <div class="section-head">
+        <h3 class="section-title">${g.emoji || ''} ${escapeHtml(g.name)}</h3>
+        <span class="section-desc">보관 ${g.stored || 0}건 · 이번 수집 ${g.raw || 0}건</span>
+      </div>
+      <ul class="src-list">
+        ${g.entries.map((e) => `
+          <li>
+            <span class="src-kind k-${e.kind.includes('외신') ? 'intl' : e.kind.includes('구글') ? 'google'
+              : e.kind.includes('네이버') ? 'naver' : 'press'}">${escapeHtml(e.kind)}</span>
+            <span class="src-name">${e.url
+              ? `<a href="${escapeHtml(e.url)}" target="_blank" rel="noopener">${escapeHtml(e.name)}</a>`
+              : escapeHtml(e.name)}</span>
+            ${e.detail ? `<span class="src-detail">${escapeHtml(e.detail)}</span>` : ''}
+          </li>`).join('')}
+      </ul>
+    </section>`).join('');
+
+  const deals = state.data?.dart_enabled
+    ? `<li><span class="src-kind k-dart">공시</span>
+         <span class="src-name"><a href="https://opendart.fss.or.kr" target="_blank" rel="noopener">DART 전자공시</a></span>
+         <span class="src-detail">타법인주식 양수·양도 / 영업 양수·양도 / 합병 / 주식교환 — 최근 88일</span></li>`
+    : `<li><span class="src-kind k-dart">공시</span><span class="src-name">DART</span>
+         <span class="src-detail">인증키 미설정</span></li>`;
+
+  view.innerHTML = `
+    <div class="section-head">
+      <h2 class="section-title">📡 수집 소스
+        <span class="section-desc">지금 어디서 가져오고 있는지</span></h2>
+    </div>
+    <div class="src-chips">${summary}</div>
+
+    <section class="src-group">
+      <div class="section-head"><h3 class="section-title">💰 딜 · 시세</h3></div>
+      <ul class="src-list">
+        ${deals}
+        <li><span class="src-kind k-market">시세</span>
+          <span class="src-name"><a href="https://m.stock.naver.com" target="_blank" rel="noopener">네이버 금융</a></span>
+          <span class="src-detail">코스피·코스닥·다우·S&amp;P·나스닥·원달러·삼성전자·SK하이닉스</span></li>
+      </ul>
+    </section>
+
+    ${body}
+
+    <p class="banner">
+      소스는 저장소의 <b>config.json</b> 하나로 관리합니다. 여기에 피드나 키워드를 추가하면
+      수집기와 이 화면이 함께 바뀝니다. 기사 본문은 저장하지 않고 제목과 요약 일부만 인용하며
+      항상 원문으로 링크합니다.
+    </p>`;
 }
 
 function renderSaved() {
@@ -329,6 +426,7 @@ function render() {
   }
   renderTabs();
   if (state.tab === 'home') renderHome();
+  else if (state.tab === 'sources') renderSources();
   else if (state.tab === 'saved') renderSaved();
   else renderCategory(state.tab);
   window.scrollTo({ top: 0 });
@@ -343,11 +441,14 @@ async function loadSnapshot(path, label) {
     const res = await fetch(`${path}?t=${Date.now()}`);
     if (!res.ok) throw new Error(res.status);
     state.data = await res.json();
-    const stats = state.data.stats || {};
-    const total = Object.values(state.data.articles || {}).reduce((n, v) => n + v.length, 0);
-    const raw = Object.values(stats).reduce((n, s) => n + (s.raw || 0), 0);
+    // 화면에 보이는 수가 아니라 실제로 쌓여 있는 총계를 보여준다
+    const totals = state.data.totals || {};
+    const stored = Object.values(totals).reduce((n, v) => n + v, 0)
+      || Object.values(state.data.articles || {}).reduce((n, v) => n + v.length, 0);
+    const added = Object.values(state.data.stats || {}).reduce((n, s) => n + (s.added || 0), 0);
     $('#meta-line').textContent =
-      `${label || state.data.generated_label} 기준 · ${total}건` + (raw ? ` (원본 ${raw}건에서 추림)` : '');
+      `${label || state.data.generated_label} 갱신 · 누적 ${stored.toLocaleString()}건`
+      + (added ? ` (이번에 ${added}건 추가)` : '');
     $('#foot-note').textContent =
       `출처: 구글뉴스 + 언론사 RSS${state.data.naver_enabled ? ' + 네이버' : ''} · 하루 2회(07:00 / 19:00) 자동 수집`;
   } catch (e) {
@@ -384,6 +485,13 @@ document.addEventListener('click', (e) => {
   const tabBtn = e.target.closest('[data-tab]');
   if (tabBtn) {
     state.tab = tabBtn.dataset.tab;
+    state.page = PAGE_SIZE;
+    render();
+    return;
+  }
+
+  if (e.target.closest('#more-articles')) {
+    state.page += PAGE_SIZE;
     render();
     return;
   }
@@ -422,7 +530,7 @@ let searchTimer;
 $('#search-input').addEventListener('input', (e) => {
   clearTimeout(searchTimer);
   $('#search-clear').hidden = !e.target.value;
-  searchTimer = setTimeout(() => { state.query = e.target.value.trim(); render(); }, 180);
+  searchTimer = setTimeout(() => { state.query = e.target.value.trim(); state.page = PAGE_SIZE; render(); }, 180);
 });
 
 $('#search-clear').addEventListener('click', () => {
@@ -458,7 +566,7 @@ $('#btn-refresh').addEventListener('click', async (e) => {
 /* ---------------------------------------------------------- 스와이프로 탭 전환 */
 
 function tabOrder() {
-  return ['home', ...(state.data?.categories || []).map((c) => c.id), 'saved'];
+  return ['home', ...(state.data?.categories || []).map((c) => c.id), 'saved', 'sources'];
 }
 
 function moveTab(step) {
@@ -467,6 +575,7 @@ function moveTab(step) {
   const next = order[i + step];
   if (!next) return;
   state.tab = next;
+  state.page = PAGE_SIZE;
   render();
   // 이동한 탭이 화면 밖이면 탭바를 따라 스크롤시킨다
   document.querySelector(`.tab[data-tab="${next}"]`)
@@ -505,4 +614,4 @@ document.addEventListener('keydown', (e) => {
 /* ---------------------------------------------------------- 시작 */
 
 loadArchiveIndex();
-loadSnapshot('data/latest.json');
+loadSnapshot('data/latest.json').then(preloadCategories);

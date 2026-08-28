@@ -3,7 +3,10 @@
     "title": "DJ News Desk",
     "timezone": "Asia/Seoul",
     "max_per_category": 120,
-    "archive_keep_days": 45
+    "archive_keep_days": 45,
+    "store_keep_days": 21,
+    "store_max_per_category": 2500,
+    "_comment": "max_per_category는 한 번 수집할 때 뽑는 상한. 실제 보관은 store_* 설정을 따르며 계속 누적된다."
   },
   "dedupe": {
     "similarity_threshold": 0.32,
@@ -123,7 +126,7 @@
   ],
   "publisher_rss": {
     "enabled": true,
-    "_comment": "언론사 RSS는 구글뉴스와 달리 진짜 요약(스니펫)을 준다. keywords가 있으면 제목·요약에 걸리는 기사만 채택한다.",
+    "_comment": "언론사 RSS는 구글뉴스와 달리 진짜 요약(스니펫)을 준다. keywords가 있으면 제목·요약에 걸리는 기사만 채택한다. lang이 en이면 외신으로 표시한다.",
     "feeds": [
       {
         "category": "mna",
@@ -309,6 +312,66 @@
         "category": "world",
         "name": "매일경제",
         "url": "https://www.mk.co.kr/rss/30300018/"
+      },
+      {
+        "category": "world",
+        "name": "BBC World",
+        "url": "https://feeds.bbci.co.uk/news/world/rss.xml",
+        "lang": "en"
+      },
+      {
+        "category": "world",
+        "name": "The Guardian",
+        "url": "https://www.theguardian.com/world/rss",
+        "lang": "en"
+      },
+      {
+        "category": "world",
+        "name": "New York Times",
+        "url": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",
+        "lang": "en"
+      },
+      {
+        "category": "world",
+        "name": "Al Jazeera",
+        "url": "https://www.aljazeera.com/xml/rss/all.xml",
+        "lang": "en"
+      },
+      {
+        "category": "world",
+        "name": "France 24",
+        "url": "https://www.france24.com/en/rss",
+        "lang": "en"
+      },
+      {
+        "category": "world",
+        "name": "CNA (싱가포르)",
+        "url": "https://www.channelnewsasia.com/api/v1/rss-outbound-feed?_format=xml",
+        "lang": "en"
+      },
+      {
+        "category": "world",
+        "name": "SCMP (홍콩)",
+        "url": "https://www.scmp.com/rss/91/feed",
+        "lang": "en"
+      },
+      {
+        "category": "world",
+        "name": "AP",
+        "url": "https://feedx.net/rss/ap.xml",
+        "lang": "en"
+      },
+      {
+        "category": "world",
+        "name": "CNBC",
+        "url": "https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100727362",
+        "lang": "en"
+      },
+      {
+        "category": "world",
+        "name": "Financial Times",
+        "url": "https://www.ft.com/world?format=rss",
+        "lang": "en"
       }
     ]
   }

@@ -32,11 +32,13 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(ROOT, "config.json")
 DATA_DIR = os.path.join(ROOT, "docs", "data")
 ARCHIVE_DIR = os.path.join(DATA_DIR, "archive")
+STORE_DIR = os.path.join(DATA_DIR, "cat")      # 카테고리별 누적 저장소
 
 KST = timezone(timedelta(hours=9))
 UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
 REQUEST_GAP = 0.4        # 초. 소스에 예의를 지킨다.
 RELATED_LINK_LIMIT = 12  # 관련기사 링크 저장 상한 (용량 관리)
+HOME_PER_CATEGORY = 10   # latest.json(홈)에 담을 카테고리당 기사 수
 ARCHIVE_PER_CATEGORY = 30  # 아카이브 스냅샷에 남길 카테고리당 기사 수
 
 
@@ -93,14 +95,24 @@ def clean_text(s):
     return re.sub(r"\s+", " ", s).strip()
 
 
-def parse_date(raw):
+# 매일경제 등 일부 피드는 "+09:00" 처럼 콜론을 넣어 표기한다.
+# RFC 822는 "+0900" 형식이라 콜론이 있으면 파이썬이 타임존을 통째로 무시하고
+# 순진한(naive) 시각을 돌려준다. 그걸 UTC로 오해하면 9시간이 밀린다.
+TZ_COLON = re.compile(r"([+-]\d{2}):(\d{2})\s*$")
+
+
+def parse_date(raw, default_tz=None):
     """RFC822 날짜 문자열 → KST datetime. 실패하면 현재 시각."""
     if raw:
         try:
-            dt = parsedate_to_datetime(raw)
+            dt = parsedate_to_datetime(TZ_COLON.sub(r"\1\2", str(raw).strip()))
             if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            return dt.astimezone(KST)
+                # 타임존이 없으면 국내 피드로 보고 KST로 읽는다 (해외 피드는 GMT를 명시한다)
+                dt = dt.replace(tzinfo=default_tz or KST)
+            dt = dt.astimezone(KST)
+            now = datetime.now(KST)
+            # 미래 시각은 신뢰하지 않는다. 정렬이 통째로 뒤틀린다.
+            return now if dt > now + timedelta(minutes=10) else dt
         except Exception:
             pass
     return datetime.now(KST)
@@ -249,7 +261,7 @@ def cluster_articles(articles, threshold, shingle_size):
 
 # ------------------------------------------------------------------- 수집기
 
-def parse_rss(xml_bytes, default_source=""):
+def parse_rss(xml_bytes, default_source="", default_tz=None):
     """RSS 2.0 <item> 목록을 표준 dict로 변환."""
     items = []
     try:
@@ -276,7 +288,7 @@ def parse_rss(xml_bytes, default_source=""):
             "url": link,
             "source": prettify_source(source),
             "summary": desc[:220],
-            "published": parse_date(item.findtext("pubDate")).isoformat(),
+            "published": parse_date(item.findtext("pubDate"), default_tz).isoformat(),
         })
     return items
 
@@ -351,7 +363,14 @@ NAVER_HOST_NAMES = {
 
 def publisher_feed(feed):
     """언론사 RSS 하나를 읽고, keywords가 있으면 제목·요약에 걸리는 것만 남긴다."""
-    items = parse_rss(fetch(feed["url"], cache=True), feed["name"])
+    items = parse_rss(fetch(feed["url"], cache=True), feed["name"],
+                      default_tz=timezone.utc if feed.get("lang") == "en" else None)
+    # 어느 매체 피드인지 알고 있으므로 이름을 확정한다.
+    # 일부 피드는 <source>에 사진 크레딧 같은 엉뚱한 값을 넣는다.
+    for it in items:
+        it["source"] = feed["name"]
+        if feed.get("lang") == "en":
+            it["lang"] = "en"          # 화면에서 외신 배지를 달기 위한 표시
     kws = feed.get("keywords")
     if kws:
         items = [
@@ -509,8 +528,8 @@ def collect_deals(threshold, shingle_size):
 # DART_API_KEY가 없으면 이 단계는 통째로 건너뛴다.
 
 DART_BASE = "https://opendart.fss.or.kr/api"
-DART_DAYS = 30          # 최근 며칠치 공시를 볼지
-DART_MAX_CORPS = 60     # 상세 조회 호출 상한 (하루 한도는 20,000건이라 여유가 크다)
+DART_DAYS = 88          # 최근 며칠치 공시를 볼지 (DART list API는 90일까지 허용)
+DART_MAX_CORPS = 200    # 상세 조회 호출 상한 (하루 한도는 20,000건이라 여유가 크다)
 
 # 공시 종류 → 상세 API. 금액이 나오는 것만 쓴다.
 DART_REPORTS = [
@@ -518,6 +537,8 @@ DART_REPORTS = [
     ("타법인주식및출자증권양도결정", "otcprStkInvscrTrfDecsn", "지분 매각"),
     ("영업양수결정", "bsnInhDecsn", "영업 양수"),
     ("영업양도결정", "bsnTrfDecsn", "영업 양도"),
+    ("주식교환·이전결정", "stkExtrDecsn", "주식 교환·이전"),
+    ("회사합병결정", "cmpMgDecsn", "합병"),
 ]
 
 
@@ -600,12 +621,46 @@ def dart_date(raw):
     return f"{m.group(1)}-{int(m.group(2)):02d}-{int(m.group(3)):02d}" if m else ""
 
 
+# 외부평가 의견문에 적힌 가치 산출 결과를 그대로 옮긴다. 직접 계산하지 않는다.
+EV_RANGE = re.compile(r"([\d,]+)\s*(백만원|억원|백만|억)\s*(?:에서|~|∼|-)\s*([\d,]+)\s*(백만원|억원|백만|억)")
+EV_SINGLE = re.compile(r"(?:가치|평가액|평가가액)[^\d]{0,12}([\d,]+)\s*(백만원|억원)")
+
+
+def _ev_unit(num, unit):
+    """공시는 백만원 단위를 즐겨 쓴다. 억원으로 맞춰준다."""
+    try:
+        n = float(str(num).replace(",", ""))
+    except ValueError:
+        return None
+    if unit.startswith("백만"):
+        n = n / 100.0           # 100백만원 = 1억원
+    return f"{n:,.0f}억원" if n >= 1 else f"{n:,.2f}억원"
+
+
+def dart_ev(text):
+    if not text:
+        return None
+    t = re.sub(r"\s+", " ", str(text))
+    m = EV_RANGE.search(t)
+    if m:
+        lo = _ev_unit(m.group(1), m.group(2))
+        hi = _ev_unit(m.group(3), m.group(4))
+        if lo and hi:
+            return f"{lo}~{hi}"
+    m = EV_SINGLE.search(t)
+    if m:
+        return _ev_unit(m.group(1), m.group(2))
+    return None
+
+
 def dart_row(r, kind):
     """공시 필드를 표 한 행으로 옮긴다. 없는 값은 None으로 두고 절대 계산하지 않는다."""
     # 지분 양수/양도는 발행회사가 Target, 영업 양수/양도는 거래상대방이 Target
     tidy = lambda v: re.sub(r"\s+", " ", str(v)).strip() if v else None
-    target = tidy(r.get("iscmp_cmpnm") or r.get("dlptn_cmpnm"))
-    sector = tidy(r.get("iscmp_mbsn") or r.get("inh_bsn") or r.get("dlptn_mbsn"))
+    target = tidy(r.get("iscmp_cmpnm") or r.get("dlptn_cmpnm") or r.get("mgptncmp_cmpnm")
+                  or r.get("extrptncmp_cmpnm"))
+    sector = tidy(r.get("iscmp_mbsn") or r.get("inh_bsn") or r.get("dlptn_mbsn")
+                  or r.get("mgptncmp_mbsn"))
     amount = krw(r.get("inhdtl_inhprc") or r.get("inh_prc") or r.get("trfdtl_trfprc"))
     stake = pct(r.get("atinh_eqrt"))
     return {
@@ -614,7 +669,8 @@ def dart_row(r, kind):
         "target": (target or "").strip()[:40] or None,
         "sector": (sector or "").strip()[:32] or None,
         "round": kind,                       # M&A라 VC 라운드 개념이 없다. 거래 유형을 넣는다
-        "ev": None,                          # 공시의 외부평가 의견은 자유 서술이라 숫자로 옮기지 않는다
+        # 외부평가 의견에 적힌 가치 산출 결과를 그대로 옮긴다 (없으면 비워둔다)
+        "ev": dart_ev(r.get("exevl_op")),
         "amount": amount,
         "stake": stake,
         "title": f"{r.get('corp_name','')} {kind} 공시",
@@ -761,7 +817,7 @@ def collect(config):
     else:
         log("  DART_API_KEY 없음 - 뉴스에서만 추출")
     deals += collect_deals(threshold, shingle_size)
-    deals = deals[:40]
+    deals = deals[:80]
     withamt = sum(1 for d in deals if d.get("amount"))
     log(f"딜 {len(deals)}건 (금액 있는 것 {withamt}건)")
 
@@ -772,8 +828,131 @@ def collect(config):
     return result, stats, use_naver, market, deals
 
 
+def build_source_list(config, stats):
+    """
+    지금 어디서 뉴스를 가져오고 있는지 화면에 그대로 보여주기 위한 목록.
+    config를 읽어서 만들기 때문에 설정을 바꾸면 화면도 따라 바뀐다.
+    """
+    pub = config.get("publisher_rss", {})
+    feeds = pub.get("feeds", []) if pub.get("enabled") else []
+    out = []
+    for cat in config["categories"]:
+        src = cat.get("sources", {})
+        entries = []
+        for topic in src.get("google_topic", []):
+            entries.append({"kind": "구글뉴스 토픽", "name": topic, "detail": "카테고리 헤드라인"})
+        for q in src.get("google_search", []):
+            entries.append({"kind": "구글뉴스 검색", "name": q, "detail": "최근 2일"})
+        if src.get("naver_search") and os.environ.get("NAVER_CLIENT_ID"):
+            for q in src["naver_search"]:
+                entries.append({"kind": "네이버 검색", "name": q, "detail": ""})
+        for f in feeds:
+            if f.get("enabled", True) and f.get("category") == cat["id"]:
+                kws = f.get("keywords")
+                entries.append({
+                    "kind": "외신 RSS" if f.get("lang") == "en" else "언론사 RSS",
+                    "name": f["name"],
+                    "detail": (f"키워드 {len(kws)}개로 필터" if kws else "카테고리 전체"),
+                    "url": f["url"],
+                })
+        out.append({
+            "id": cat["id"], "name": cat["name"], "emoji": cat.get("emoji", ""),
+            "entries": entries,
+            "raw": stats.get(cat["id"], {}).get("raw", 0),
+            "stored": stats.get(cat["id"], {}).get("stored", 0),
+        })
+    return out
+
+
+def merge_store(cat_id, fresh, keep_days, max_items):
+    """
+    새로 수집한 기사를 카테고리 누적 파일에 합친다.
+    수집할 때마다 덮어쓰던 것을 바꿔서, 기사가 날짜가 지나도 계속 쌓이게 한다.
+    """
+    os.makedirs(STORE_DIR, exist_ok=True)
+    path = os.path.join(STORE_DIR, f"{cat_id}.json")
+
+    old = []
+    if os.path.exists(path):
+        try:
+            with open(path, encoding="utf-8") as f:
+                old = json.load(f).get("articles", [])
+        except (json.JSONDecodeError, OSError):
+            old = []
+
+    # 1) URL 기준 병합. 새로 온 쪽이 관련기사를 더 많이 물고 있으면 그쪽으로 갱신한다.
+    by_url = {a["url"]: a for a in old}
+    added = 0
+    for a in fresh:
+        prev = by_url.get(a["url"])
+        if prev is None:
+            by_url[a["url"]] = a
+            added += 1
+        elif a.get("related_total", 0) > prev.get("related_total", 0):
+            by_url[a["url"]] = a
+
+    # 2) 제목 기준으로 한 번 더 정리한다.
+    #    매 수집마다 클러스터 대표가 바뀔 수 있어 같은 사건이 두 줄로 남는 걸 막는다.
+    by_title = {}
+    for a in by_url.values():
+        key = normalize_title(a["title"])
+        prev = by_title.get(key)
+        if prev is None or a.get("related_total", 0) > prev.get("related_total", 0):
+            by_title[key] = a
+
+    items = list(by_title.values())
+    cutoff = (datetime.now(KST) - timedelta(days=keep_days)).isoformat()
+    items = [a for a in items if a.get("published", "") >= cutoff]
+    items.sort(key=lambda a: a["published"], reverse=True)
+    items = items[:max_items]
+
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"category": cat_id,
+                   "updated_at": datetime.now(KST).isoformat(),
+                   "count": len(items),
+                   "articles": items},
+                  f, ensure_ascii=False, separators=(",", ":"))
+    return items, added
+
+
+def pick_for_home(items, limit, per_source=2):
+    """
+    홈에 실을 기사를 고른다.
+    한 매체가 같은 시각에 수십 건을 쏟아내면 홈이 그 매체로 도배되므로
+    매체당 몇 건까지만 넣고, 자리가 남으면 그때 나머지를 채운다.
+    """
+    picked, used = [], {}
+    for a in items:
+        src = a.get("source", "")
+        if used.get(src, 0) >= per_source:
+            continue
+        used[src] = used.get(src, 0) + 1
+        picked.append(a)
+        if len(picked) >= limit:
+            return picked
+    for a in items:                       # 그래도 모자라면 남은 것으로 채운다
+        if a not in picked:
+            picked.append(a)
+            if len(picked) >= limit:
+                break
+    return picked
+
+
 def write_output(config, articles, stats, use_naver, market, deals):
     now = datetime.now(KST)
+    site = config.get("site", {})
+    keep_days = site.get("store_keep_days", 21)
+    max_items = site.get("store_max_per_category", 2500)
+
+    # 누적 저장소에 합치고, 홈에는 최신 일부만 싣는다
+    totals, home = {}, {}
+    for cid, fresh in articles.items():
+        merged, added = merge_store(cid, fresh, keep_days, max_items)
+        totals[cid] = len(merged)
+        home[cid] = pick_for_home(merged, HOME_PER_CATEGORY)
+        stats.setdefault(cid, {})["stored"] = len(merged)
+        stats[cid]["added"] = added
+        log(f"  누적 [{cid}] {len(merged)}건 (이번에 새로 {added}건)")
     slot = "morning" if now.hour < 13 else "evening"
     payload = {
         "generated_at": now.isoformat(),
@@ -785,10 +964,12 @@ def write_output(config, articles, stats, use_naver, market, deals):
             for c in config["categories"]
         ],
         "stats": stats,
+        "totals": totals,
+        "sources": build_source_list(config, stats),
         "market": market,
         "deals": deals,
         "dart_enabled": bool(os.environ.get("DART_API_KEY", "").strip()),
-        "articles": articles,
+        "articles": home,
     }
 
     os.makedirs(ARCHIVE_DIR, exist_ok=True)
@@ -801,7 +982,7 @@ def write_output(config, articles, stats, use_naver, market, deals):
     slim = dict(payload)
     slim["articles"] = {
         cid: [{k: v for k, v in a.items() if k != "related"} for a in arts[:ARCHIVE_PER_CATEGORY]]
-        for cid, arts in articles.items()
+        for cid, arts in home.items()
     }
     slim["deals"] = []
     slim["slim"] = True

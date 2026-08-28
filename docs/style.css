@@ -166,6 +166,21 @@ body {
 /* ---------- 본문 ---------- */
 main { padding: 4px 14px 32px; max-width: 780px; margin: 0 auto; }
 
+/* 데스크톱에서는 폭을 넓혀 표가 잘리지 않게 한다. 모바일은 화면에 딱 맞춘다. */
+@media (min-width: 900px) {
+  main { max-width: 1180px; padding-left: 28px; padding-right: 28px; }
+  .topbar { padding-left: 28px; padding-right: 28px; }
+  .topbar-row, .meta-line, .search-bar, .tabs-wrap { max-width: 1180px; margin-left: auto; margin-right: auto; }
+  .deal-table { font-size: 13px; }
+  .deal-table th, .deal-table td { padding: 9px 13px; }
+  .table-scroll { max-height: none; }
+}
+
+/* 넓은 화면에서는 딜 표가 통째로 보이도록 본문을 더 넓힌다 */
+@media (min-width: 1320px) {
+  main, .topbar-row, .meta-line, .search-bar, .tabs-wrap { max-width: 1280px; }
+}
+
 .section-head {
   display: flex;
   align-items: baseline;
@@ -485,3 +500,45 @@ main { padding: 4px 14px 32px; max-width: 780px; margin: 0 auto; }
   line-height: 1.55;
   color: var(--text-faint);
 }
+
+/* ---------- 소스 탭 ---------- */
+.src-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 4px; }
+.src-chip {
+  background: var(--bg-sunken); color: var(--text-dim);
+  border-radius: 6px; padding: 4px 9px; font-size: 12px; font-weight: 600;
+}
+.src-group { margin-top: 6px; }
+.src-list { list-style: none; margin: 0; padding: 0; }
+.src-list li {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13.5px;
+}
+.src-list li:last-child { border-bottom: 0; }
+.src-kind {
+  flex: 0 0 auto; font-size: 10.5px; font-weight: 800; letter-spacing: .01em;
+  border-radius: 5px; padding: 2px 7px; white-space: nowrap;
+}
+.k-google { background: #e8f0fe; color: #1a56c4; }
+.k-press  { background: #e9f6ec; color: #1a7f37; }
+.k-intl   { background: #fdeced; color: #b3261e; }
+.k-naver  { background: #e7f7ee; color: #04814a; }
+.k-dart   { background: #f0ebfd; color: #5b3ec8; }
+.k-market { background: #fff2e0; color: #9a5b00; }
+@media (prefers-color-scheme: dark) {
+  .k-google { background: #17233c; color: #8ab4f8; }
+  .k-press  { background: #14291a; color: #7ee2a0; }
+  .k-intl   { background: #33191b; color: #ff9a9a; }
+  .k-naver  { background: #10281d; color: #6ee7a8; }
+  .k-dart   { background: #221a3a; color: #b8a4f5; }
+  .k-market { background: #2e2210; color: #f0b866; }
+}
+.src-name { font-weight: 600; color: var(--text); }
+.src-name a { color: var(--accent); text-decoration: none; }
+.src-detail { color: var(--text-faint); font-size: 12px; }
+
+/* 외신 배지 */
+.intl-chip {
+  background: #fdeced; color: #b3261e;
+  border-radius: 5px; padding: 1px 6px; font-size: 11px; font-weight: 700;
+}
+@media (prefers-color-scheme: dark) { .intl-chip { background: #33191b; color: #ff9a9a; } }
