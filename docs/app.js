@@ -76,19 +76,22 @@ function cardHtml(a, catId, opts = {}) {
   const q = state.query;
   const saved = isSaved(a.url);
   const rel = a.related || [];
+  const relTotal = a.related_total ?? rel.length;   // 링크는 12건까지만 싣지만 개수는 전체를 보여준다
   const relId = 'rel-' + Math.random().toString(36).slice(2, 9);
 
   const summary = a.summary
     ? `<p class="card-summary">${highlight(a.summary, q)}</p>` : '';
 
-  const relBtn = rel.length
-    ? `<button class="rel-toggle" data-rel="${relId}">관련 ${rel.length}건 ▾</button>` : '';
+  const relBtn = relTotal
+    ? `<button class="rel-toggle" data-rel="${relId}" data-total="${relTotal}">관련 ${relTotal}건 ▾</button>` : '';
 
   const relList = rel.length ? `
     <ul class="rel-list" id="${relId}" hidden>
       ${rel.map((r) => `
         <li><a href="${escapeHtml(r.url)}" target="_blank" rel="noopener">${escapeHtml(r.title)}</a>
         <span class="rel-src">${escapeHtml(r.source)}</span></li>`).join('')}
+      ${relTotal > rel.length
+        ? `<li class="rel-more">그 밖에 ${relTotal - rel.length}개 매체가 더 보도했어요</li>` : ''}
     </ul>` : '';
 
   const chip = opts.showCat ? `<span class="cat-chip">${escapeHtml(catName(catId))}</span>` : '';
@@ -108,6 +111,30 @@ function cardHtml(a, catId, opts = {}) {
       <button class="star${saved ? ' on' : ''}" data-url="${escapeHtml(a.url)}" data-cat="${catId}"
               aria-label="나중에 보기">${saved ? '★' : '☆'}</button>
     </article>`;
+}
+
+/* ---------------------------------------------------------- 시세 스트립 */
+
+function marketHtml() {
+  const m = state.data?.market || [];
+  if (!m.length) return '';
+
+  let html = '<div class="market">';
+  let lastGroup = null;
+  for (const it of m) {
+    if (lastGroup !== null && it.group !== lastGroup) html += '<div class="market-sep"></div>';
+    lastGroup = it.group;
+    // 국내 관행대로 오르면 빨강, 내리면 파랑
+    const dir = it.ratio > 0 ? 'up' : it.ratio < 0 ? 'down' : 'flat';
+    const sign = it.ratio > 0 ? '+' : '';
+    html += `
+      <a class="mcard ${dir}" href="${escapeHtml(it.url)}" target="_blank" rel="noopener">
+        <span class="mname">${escapeHtml(it.name)}</span>
+        <span class="mprice">${escapeHtml(it.price)}</span>
+        <span class="mchg">${escapeHtml(it.diff)} (${sign}${it.ratio.toFixed(2)}%)</span>
+      </a>`;
+  }
+  return html + '</div>';
 }
 
 /* ---------------------------------------------------------- 검색 필터 */
@@ -151,6 +178,7 @@ function renderHome() {
     if (state.query && !items.length) continue;
     html += `
       <section>
+        ${c.id === 'economy' ? marketHtml() : ''}
         <div class="section-head">
           <h2 class="section-title">${c.emoji || ''} ${escapeHtml(c.name)}
             <span class="section-desc">${escapeHtml(c.desc || '')}</span></h2>
@@ -165,10 +193,11 @@ function renderHome() {
   if (state.query && totalShown === 0) {
     html = `<p class="empty">‘${escapeHtml(state.query)}’와 맞는 기사가 없어요.<br>다른 키워드로 찾아보세요.</p>`;
   }
-  if (!state.data.naver_enabled) {
-    html += `<p class="banner">지금은 <b>구글뉴스</b>만 쓰고 있어요. 네이버 검색 API 키를 GitHub Secrets에 넣으면
-             한국 매체 커버리지가 넓어지고 기사 미리보기(2줄 요약)도 함께 나옵니다.</p>`;
+  if (state.data.slim) {
+    html += `<p class="banner">지난 스냅샷은 가볍게 보관해서 카테고리당 상위 30건까지만 있고,
+             관련기사 묶음 링크는 빠져 있어요.</p>`;
   }
+
   view.innerHTML = html;
 }
 
@@ -176,6 +205,7 @@ function renderCategory(catId) {
   const c = state.data.categories.find((x) => x.id === catId);
   const items = itemsFor(catId);
   view.innerHTML = `
+    ${catId === 'economy' ? marketHtml() : ''}
     <div class="section-head">
       <h2 class="section-title">${c.emoji || ''} ${escapeHtml(c.name)}
         <span class="section-desc">${escapeHtml(c.desc || '')}</span></h2>
@@ -231,7 +261,7 @@ async function loadSnapshot(path, label) {
     $('#meta-line').textContent =
       `${label || state.data.generated_label} 기준 · ${total}건` + (raw ? ` (원본 ${raw}건에서 추림)` : '');
     $('#foot-note').textContent =
-      `출처: 구글뉴스${state.data.naver_enabled ? ' + 네이버' : ''} · 하루 2회(07:00 / 19:00) 자동 수집`;
+      `출처: 구글뉴스 + 언론사 RSS${state.data.naver_enabled ? ' + 네이버' : ''} · 하루 2회(07:00 / 19:00) 자동 수집`;
   } catch (e) {
     state.data = null;
     $('#meta-line').textContent = '데이터를 불러오지 못했어요';
@@ -282,7 +312,7 @@ document.addEventListener('click', (e) => {
     const ul = document.getElementById(relBtn.dataset.rel);
     const open = ul.hidden;
     ul.hidden = !open;
-    relBtn.textContent = `관련 ${ul.children.length}건 ${open ? '▴' : '▾'}`;
+    relBtn.textContent = `관련 ${relBtn.dataset.total}건 ${open ? '▴' : '▾'}`;
   }
 });
 
