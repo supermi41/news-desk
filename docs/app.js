@@ -107,6 +107,10 @@ function cardHtml(a, catId, opts = {}) {
   const relTotal = a.related_total ?? rel.length;   // 링크는 12건까지만 싣지만 개수는 전체를 보여준다
   const relId = 'rel-' + Math.random().toString(36).slice(2, 9);
 
+  // 기계번역은 틀릴 수 있으니 원문을 버리지 않고 함께 보여준다
+  const headline = a.title_ko || a.title;
+  const original = a.title_ko
+    ? `<p class="card-original">${highlight(a.title, q)}</p>` : '';
   const summary = a.summary
     ? `<p class="card-summary">${highlight(a.summary, q)}</p>` : '';
 
@@ -123,17 +127,22 @@ function cardHtml(a, catId, opts = {}) {
     </ul>` : '';
 
   const chip = opts.showCat ? `<span class="cat-chip">${escapeHtml(catName(catId))}</span>` : '';
-  const intl = a.lang === 'en' ? '<span class="intl-chip">외신</span>' : '';
+  const intl = a.lang === 'en'
+    ? `<span class="intl-chip">외신</span>${a.title_ko ? '<span class="tr-chip" title="기계번역입니다. 원문을 함께 확인하세요">번역</span>' : ''}`
+    : '';
 
   return `
     <article class="card${getRead().has(a.url) ? ' read' : ''}">
-      <a class="card-title" href="${escapeHtml(a.url)}" target="_blank" rel="noopener">${highlight(a.title, q)}</a>
+      <a class="card-title" href="${escapeHtml(a.url)}" target="_blank" rel="noopener">${highlight(headline, q)}</a>
+      ${original}
       ${summary}
       <div class="card-meta">
         ${chip}${intl}
         <span class="src">${escapeHtml(a.source || '')}</span>
         <span class="dot">·</span>
         <span>${timeAgo(a.published)}</span>
+        <span class="dot">·</span>
+        <a class="read-link" href="${escapeHtml(a.url)}" target="_blank" rel="noopener">기사 보기 ↗</a>
         ${relBtn ? '<span class="dot">·</span>' + relBtn : ''}
       </div>
       ${relList}
@@ -144,7 +153,7 @@ function cardHtml(a, catId, opts = {}) {
 
 /* ---------------------------------------------------------- 딜 테이블 */
 
-const NA = '<span class="na">정보 없음</span>';
+const NA = '<span class="na">비공개</span>';
 const DEALS_PREVIEW = 8;   // 표가 화면을 다 잡아먹지 않게 처음엔 이만큼만 보여준다
 
 function cell(v) {
@@ -195,7 +204,7 @@ function dealsHtml() {
           ${state.dealsOpen ? '접기 ▴' : `딜 ${rows.length - DEALS_PREVIEW}건 더보기 ▾`}
         </button>` : ''}
       <p class="deals-note">
-        기사에서 확실히 읽히는 값만 채웁니다. 원문에 없으면 추정하지 않고 <b>정보 없음</b>으로 둡니다.
+        기사에서 확실히 읽히는 값만 채웁니다. 원문에 없으면 추정하지 않고 <b>비공개</b>로 둡니다.
         ${state.data?.dart_enabled
           ? '상장사 딜은 DART 공시에서 가져와 금액·지분율이 정확합니다.'
           : 'DART 인증키를 넣으면 상장사 딜의 투자금액·지분율이 공시 기준으로 정확히 채워집니다.'}
@@ -231,7 +240,7 @@ function marketHtml() {
 
 function matches(a, q) {
   if (!q) return true;
-  const hay = [a.title, a.summary, a.source, ...(a.related || []).map((r) => r.title)]
+  const hay = [a.title, a.title_ko, a.summary, a.source, ...(a.related || []).map((r) => r.title)]
     .join(' ').toLowerCase();
   return hay.includes(q.toLowerCase());
 }

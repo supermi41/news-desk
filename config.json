@@ -372,6 +372,127 @@
         "name": "Financial Times",
         "url": "https://www.ft.com/world?format=rss",
         "lang": "en"
+      },
+      {
+        "category": "mna",
+        "name": "플래텀",
+        "url": "https://platum.kr/feed",
+        "keywords": [
+          "인수",
+          "합병",
+          "M&A",
+          "매각",
+          "지분",
+          "사모펀드",
+          "PEF",
+          "투자유치",
+          "투자 유치",
+          "우선협상",
+          "본입찰",
+          "기업회생",
+          "워크아웃",
+          "채권단",
+          "상장 예비심사",
+          "IPO",
+          "엑시트"
+        ]
+      },
+      {
+        "category": "mna",
+        "name": "벤처스퀘어",
+        "url": "https://www.venturesquare.net/feed",
+        "keywords": [
+          "인수",
+          "합병",
+          "M&A",
+          "매각",
+          "지분",
+          "사모펀드",
+          "PEF",
+          "투자유치",
+          "투자 유치",
+          "우선협상",
+          "본입찰",
+          "기업회생",
+          "워크아웃",
+          "채권단",
+          "상장 예비심사",
+          "IPO",
+          "엑시트"
+        ]
+      },
+      {
+        "category": "mna",
+        "name": "아웃스탠딩",
+        "url": "https://outstanding.kr/feed",
+        "keywords": [
+          "인수",
+          "합병",
+          "M&A",
+          "매각",
+          "지분",
+          "사모펀드",
+          "PEF",
+          "투자유치",
+          "투자 유치",
+          "우선협상",
+          "본입찰",
+          "기업회생",
+          "워크아웃",
+          "채권단",
+          "상장 예비심사",
+          "IPO",
+          "엑시트"
+        ]
+      },
+      {
+        "category": "economy",
+        "name": "지디넷코리아",
+        "url": "https://feeds.feedburner.com/zdkorea"
+      },
+      {
+        "category": "economy",
+        "name": "디일렉",
+        "url": "https://www.thelec.kr/rss/allArticle.xml"
+      },
+      {
+        "category": "economy",
+        "name": "바이라인네트워크",
+        "url": "https://byline.network/feed/"
+      },
+      {
+        "category": "world",
+        "name": "NPR",
+        "url": "https://feeds.npr.org/1004/rss.xml",
+        "lang": "en"
+      },
+      {
+        "category": "world",
+        "name": "TechCrunch",
+        "url": "https://techcrunch.com/feed/",
+        "lang": "en"
+      },
+      {
+        "category": "kfood",
+        "name": "플래텀",
+        "url": "https://platum.kr/feed",
+        "keywords": [
+          "프랜차이즈",
+          "외식",
+          "가맹",
+          "F&B",
+          "식품",
+          "급식",
+          "카페",
+          "편의점",
+          "배달앱",
+          "K푸드",
+          "케이푸드",
+          "음료",
+          "주류",
+          "레스토랑",
+          "먹거리"
+        ]
       }
     ]
   }

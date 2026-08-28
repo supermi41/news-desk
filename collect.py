@@ -169,6 +169,15 @@ BLOCKED_SOURCES = {
 }
 
 
+# 보도자료 정정문, 광고성 공지 등은 기사로 보지 않는다
+NOISE_TITLE = re.compile(r"(C\s?O\s?R\s?R\s?E\s?C\s?T\s?I\s?O\s?N|^\s*/.*/\s*$|"
+                         r"Media Advisory|Photo Release|정정보도|광고문의)", re.IGNORECASE)
+
+
+def is_noise(title):
+    return bool(NOISE_TITLE.search(title or ""))
+
+
 def is_blocked(url, source):
     host = urllib.parse.urlparse(url).netloc.lower()
     if any(b in host for b in BLOCKED_HOSTS):
@@ -287,7 +296,7 @@ def parse_rss(xml_bytes, default_source="", default_tz=None):
             "title": strip_source_tail(title),
             "url": link,
             "source": prettify_source(source),
-            "summary": desc[:220],
+            "summary": desc[:400],
             "published": parse_date(item.findtext("pubDate"), default_tz).isoformat(),
         })
     return items
@@ -340,7 +349,7 @@ def naver_search(query, cid, secret, display=40):
             "title": title,
             "url": link,
             "source": NAVER_HOST_NAMES.get(host, host),
-            "summary": clean_text(it.get("description", ""))[:220],
+            "summary": clean_text(it.get("description", ""))[:400],
             "published": parse_date(it.get("pubDate")).isoformat(),
         })
     return items
@@ -521,6 +530,83 @@ def collect_deals(threshold, shingle_size):
     filled = lambda r: sum(1 for k in ("target", "round", "amount", "ev", "stake") if r[k]) + bool(r["investors"])
     merged.sort(key=lambda r: (filled(r), r["date"]), reverse=True)
     return merged[:25]
+
+
+# --------------------------------------------------------- 외신 제목 번역
+# MyMemory 무료 API. 키가 없어도 하루 5,000단어까지 쓸 수 있다.
+# 제목만 번역한다(120건 x 약 12단어 = 하루 3,000단어 수준). 요약까지 하면 한도를 넘는다.
+# TRANSLATE_EMAIL 을 넣으면 하루 50,000단어로 늘어난다.
+#
+# 기계번역이라 틀릴 수 있다. 그래서 원문을 버리지 않고 함께 저장해 화면에 같이 보여준다.
+
+MYMEMORY = "https://api.mymemory.translated.net/get"
+TRANSLATE_MAX = 220          # 한 번 수집에서 새로 번역할 최대 건수
+
+
+def translate_ko(text, email=""):
+    if not text or not text.strip():
+        return None
+    params = {"q": text[:480], "langpair": "en|ko"}
+    if email:
+        params["de"] = email
+    try:
+        d = json.loads(fetch(f"{MYMEMORY}?{urllib.parse.urlencode(params)}", timeout=15))
+    except Exception:
+        return None
+    if str(d.get("responseStatus")) != "200":
+        return None
+    out = (d.get("responseData", {}) or {}).get("translatedText", "").strip()
+    # 번역이 실패하면 원문을 그대로 돌려주는 경우가 있다. 그건 번역이 아니다.
+    if not out or out.upper() == text.upper():
+        return None
+    return out
+
+
+def load_existing_titles():
+    """이미 번역해 둔 제목을 다시 번역하지 않도록 누적 저장소에서 불러온다."""
+    cache = {}
+    if not os.path.isdir(STORE_DIR):
+        return cache
+    for name in os.listdir(STORE_DIR):
+        if not name.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(STORE_DIR, name), encoding="utf-8") as f:
+                for a in json.load(f).get("articles", []):
+                    if a.get("title_ko"):
+                        cache[a["url"]] = a["title_ko"]
+        except (json.JSONDecodeError, OSError):
+            continue
+    return cache
+
+
+def translate_foreign(articles_by_cat):
+    """외신 기사 제목에 한국어 번역을 붙인다. 실패하면 원문 그대로 둔다."""
+    email = os.environ.get("TRANSLATE_EMAIL", "").strip()
+    cache = load_existing_titles()
+    todo = []
+    for arts in articles_by_cat.values():
+        for a in arts:
+            if a.get("lang") != "en":
+                continue
+            hit = cache.get(a["url"])
+            if hit:
+                a["title_ko"] = hit
+            else:
+                todo.append(a)
+
+    if not todo:
+        log("  번역할 새 외신 없음")
+        return
+    todo = todo[:TRANSLATE_MAX]
+    done = 0
+    for a in todo:
+        ko = translate_ko(a["title"], email)
+        if ko:
+            a["title_ko"] = ko
+            done += 1
+        time.sleep(0.25)
+    log(f"  외신 제목 번역 {done}/{len(todo)}건" + (" (이메일 등록됨)" if email else " (익명 한도)"))
 
 
 # --------------------------------------------------------- 딜 (DART 공시)
@@ -787,7 +873,7 @@ def collect(config):
         deduped = []
         blocked = 0
         for a in raw:
-            if is_blocked(a["url"], a["source"]):
+            if is_blocked(a["url"], a["source"]) or is_noise(a["title"]):
                 blocked += 1
                 continue
             u = a["url"].split("?")[0]
@@ -804,6 +890,9 @@ def collect(config):
         result[cat["id"]] = clustered
         stats[cat["id"]] = {"raw": len(raw), "unique": len(deduped), "shown": len(clustered)}
         log(f"[{cat['name']}] 원본 {len(raw)} → 차단 {blocked} → 중복제거 {len(deduped)} → 묶음 {len(clustered)}")
+
+    log("외신 제목 번역")
+    translate_foreign(result)
 
     log("최근 딜 수집")
     deals = []

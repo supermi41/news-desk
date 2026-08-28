@@ -68,17 +68,25 @@ body {
   font-weight: 800;
   letter-spacing: -.02em;
 }
-.topbar-actions { display: flex; gap: 2px; }
+.topbar-actions { display: flex; gap: 6px; }
+/* 아이콘만 두면 무슨 기능인지 모른다. 짧은 이름을 함께 단다. */
 .icon-btn {
-  background: none;
-  border: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
   color: var(--text-dim);
-  font-size: 17px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
   line-height: 1;
-  padding: 7px 8px;
-  border-radius: 9px;
+  padding: 7px 10px;
+  border-radius: 8px;
   cursor: pointer;
+  white-space: nowrap;
 }
+.icon-btn .ico { font-size: 13px; }
 .icon-btn:hover, .icon-btn.on { background: var(--bg-sunken); color: var(--text); }
 .icon-btn.spin { animation: spin .8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -239,13 +247,23 @@ main { padding: 4px 14px 32px; max-width: 780px; margin: 0 auto; }
   border-radius: 3px;
   padding: 0 1px;
 }
+.card-original {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--text-faint);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
 .card-summary {
   margin: 5px 0 0;
   font-size: 13.5px;
   color: var(--text-dim);
-  line-height: 1.5;
+  line-height: 1.55;
   display: -webkit-box;
-  -webkit-line-clamp: 2;
+  -webkit-line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -542,3 +560,12 @@ main { padding: 4px 14px 32px; max-width: 780px; margin: 0 auto; }
   border-radius: 5px; padding: 1px 6px; font-size: 11px; font-weight: 700;
 }
 @media (prefers-color-scheme: dark) { .intl-chip { background: #33191b; color: #ff9a9a; } }
+
+/* 기계번역 표시 */
+.tr-chip {
+  background: var(--bg-sunken); color: var(--text-dim);
+  border-radius: 5px; padding: 1px 6px; font-size: 11px; font-weight: 700;
+  cursor: help;
+}
+/* 출처 줄의 원문 링크 */
+.read-link { color: var(--accent); text-decoration: none; font-weight: 600; }
