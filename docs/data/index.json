@@ -1,6 +1,12 @@
 {
  "snapshots": [
   {
+   "file": "2026-09-19-morning.json",
+   "date": "2026-09-19",
+   "slot": "morning",
+   "label": "2026-09-19 오전"
+  },
+  {
    "file": "2026-09-18-morning.json",
    "date": "2026-09-18",
    "slot": "morning",
