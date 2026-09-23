@@ -7,6 +7,12 @@
    "label": "2026-09-23 오전"
   },
   {
+   "file": "2026-09-23-evening.json",
+   "date": "2026-09-23",
+   "slot": "evening",
+   "label": "2026-09-23 오후"
+  },
+  {
    "file": "2026-09-22-morning.json",
    "date": "2026-09-22",
    "slot": "morning",
