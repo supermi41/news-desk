@@ -1,6 +1,12 @@
 {
  "snapshots": [
   {
+   "file": "2026-11-09-morning.json",
+   "date": "2026-11-09",
+   "slot": "morning",
+   "label": "2026-11-09 오전"
+  },
+  {
    "file": "2026-11-08-morning.json",
    "date": "2026-11-08",
    "slot": "morning",
@@ -347,18 +353,6 @@
    "date": "2026-09-25",
    "slot": "morning",
    "label": "2026-09-25 오전"
-  },
-  {
-   "file": "2026-09-24-morning.json",
-   "date": "2026-09-24",
-   "slot": "morning",
-   "label": "2026-09-24 오전"
-  },
-  {
-   "file": "2026-09-24-evening.json",
-   "date": "2026-09-24",
-   "slot": "evening",
-   "label": "2026-09-24 오후"
   }
  ]
 }
